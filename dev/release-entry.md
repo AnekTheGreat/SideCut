@@ -1,21 +1,16 @@
-## 84.1.3 ({{STAMP}})
+## 84.1.3 ({{STAMP}}): the version, the cache and the notes move to 84.1.3
 
-**The music keeps playing when you leave the app.** While a song is playing, SideCut holds a
-foreground service, so switching to another app no longer freezes it and stops the song.
+A version-only release, cut the same way 84.0.0 was: `const APP_VERSION` in
+`index.html`, the `sidecut-shell-v` name in `sw.js`, the first entry in the
+release-notes array and `updates.json` all move from 84.1.2 to 84.1.3 together, and
+nothing a user can see changes. The point is that the number the app reports, the
+cache it installs offline and the notes it shows are the same number, and that the
+OTA bundles carry it.
 
-- Nothing in the page was pausing the audio. `scStreamRemember` only saves the position, and 84.1.2 had
-  already stopped the battery saver from killing the loops while a song plays. What was left was the
-  operating system: the player is an audio element inside the page, and Android freezes a cached
-  process - which is what SideCut becomes the moment another app comes forward. A frozen process
-  cannot feed an audio element, so the song stopped.
-- The app already carried the machinery for this and nothing used it: the `SideCutJob` bridge
-  (`hold` / `update` / `release`) starts `SideCutJobService`, a foreground service with a wake lock.
-  A foreground service is the difference between an app Android may freeze and a player it may not.
-- The page now holds it when a `<audio>` element starts playing and lets it go about half a second
-  after the last one pauses or ends. It never releases a hold from the background: an OS pause must
-  not tear down a hold something else may be relying on, so a release only happens while the app is
-  on screen.
-- Honest limit: this keeps the process alive, which is what stops the freeze. A recents swipe that
-  destroys the activity still ends the song; owning playback in the native player is the next piece of
-  work, not this release.
-- OTA: full channel {{ROOT}} bytes, Play channel {{PLAY}} bytes.
+`dev/patch-8413.py` touches exactly three things: the version line, the cache name,
+and one new entry prepended to the notes array (`updates.json` is rewritten from the
+same notes). Its anchors are the version line and the 84.1.2 notes entry, each
+matched exactly once - the guard that stops a release landing on the wrong build.
+
+Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
+{{PLAY}} bytes. Page-only: no native change, so the APK is not rebuilt.

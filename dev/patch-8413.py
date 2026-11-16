@@ -1,130 +1,100 @@
-"""84.1.3 - a song holds the app awake, the way a player does.
+#!/usr/bin/env python3
+"""SideCut 84.1.3 - the version, the cache and the notes move to 84.1.3.
 
-Nothing in the page paused the audio: scStreamRemember only saves the position, and 84.1.2
-stopped the battery saver from killing the loops while a song plays. The music still died on
-leaving because the sound is played by the WebView, and Android freezes a cached process -
-which is what the app becomes the moment another app comes forward. A frozen process cannot
-feed an audio element, so the song stopped.
+A version-only release, the same shape as 84.0.0 when it renumbered 83.10.0: the
+page, the service worker's cache and the release notes all say 84.1.3, and nothing
+a user can see changes. It exists so the number the app reports, the cache it
+installs and the notes it shows are the same number, and so the OTA bundles carry
+it.
 
-SideCut already carries the machinery for this: the SideCutJob plugin (hold/update/release)
-starts SideCutJobService, a foreground service with a wake lock, which is exactly what makes
-the difference between a cached app that can be frozen and a player that cannot. The page now
-holds it while a song is actually playing and lets it go when the song stops - and never lets
-go of a hold it did not take while the app is in the background, so an OS pause cannot tear
-down a hold that something else may be relying on.
-
-Idempotent. --check exits 0 when the page already carries the hold.
+    python3 dev/patch-8413.py            # apply
+    python3 dev/patch-8413.py --check    # verify only, writes nothing
 """
 
 import io
 import json
+import os
 import sys
 
-PAGE, SW, UPD = 'index.html', 'sw.js', 'updates.json'
-VERSION, OLD_VERSION = '84.1.3', '84.1.2'
-TITLE = 'The music keeps playing when you leave'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PAGE = os.path.join(ROOT, "index.html")
+SW = os.path.join(ROOT, "sw.js")
+UPDATES = os.path.join(ROOT, "updates.json")
 
-ANCHOR = "  window.addEventListener('pagehide', function(){ __scPauseIdle(); });\n"
+V = "84.1.3"
+OLD = "84.1.2"
 
-HOLD = '''
-  // 84.1.3 - A SONG HOLDS THE APP AWAKE. The player is this page, so the page has to keep the
-  // process out of Android's freezer: SideCutJob.hold() starts the foreground service that says
-  // "this app is doing something", and the audio survives another app coming forward. Released
-  // when the song stops, and only from the foreground - a hold taken while something else may be
-  // using the service is not ours to drop.
-  (function(){
-    var held = false;
-    function job(){
-      try{ var C = window.Capacitor; return (C && C.Plugins) ? C.Plugins.SideCutJob : null; }catch(_eJ){ return null; }
-    }
-    function playing(){
-      try{
-        if(window.scStreamState && scStreamState.audio && !scStreamState.audio.paused && !scStreamState.audio.ended) return true;
-      }catch(_eP1){}
-      try{
-        var as = document.querySelectorAll('audio,video');
-        for(var i = 0; i < as.length; i++){ if(as[i] && !as[i].paused && !as[i].ended) return true; }
-      }catch(_eP2){}
-      return false;
-    }
-    function name(){
-      try{
-        var a = document.querySelector('#npTitle') || document.querySelector('.np-title') || document.querySelector('#barTitle');
-        var t = a && (a.textContent || '').trim();
-        if(t) return t;
-      }catch(_eN){}
-      return 'SideCut';
-    }
-    function hold(){
-      var P = job();
-      if(!P || typeof P.hold !== 'function' || held) return;
-      held = true;
-      try{
-        var r = P.hold({ title: name(), sub: 'Playing' });
-        if(r && typeof r.catch === 'function') r.catch(function(){ held = false; });
-      }catch(_eH){ held = false; }
-    }
-    function release(){
-      var P = job();
-      if(!P || typeof P.release !== 'function' || !held) return;
-      held = false;
-      try{
-        var r = P.release();
-        if(r && typeof r.catch === 'function') r.catch(function(){});
-      }catch(_eR){}
-    }
-    document.addEventListener('play', function(){ hold(); }, true);
-    function letGo(){
-      setTimeout(function(){ if(!playing()){ if(document.hidden) return; release(); } }, 600);
-    }
-    document.addEventListener('pause', letGo, true);
-    document.addEventListener('ended', letGo, true);
-    // A song already running when this code arrives (an over-the-air update caught mid-play).
-    if(playing()) hold();
-  })();
-'''
+DATE = "November 16, 2026"
 
-NOTES = ("The music keeps playing when you leave the app. SideCut plays in the page, and Android "
-         "freezes a backgrounded app that is not in the foreground - so the sound stopped the second "
-         "another app came forward. While a song is playing the app now holds a foreground service, "
-         "which is exactly what a player does to stay a player, and lets it go when the song stops.")
+ENTRY = """      { version: '84.1.3', date: 'November 16, 2026', title: 'The version, the cache and the notes move to 84.1.3', items: [
+    'The version is 84.1.3. A release here is numbered major.minor.patch, so 84.1.2 is followed by 84.1.3, and the page, the service worker\\'s cache and these notes all say it together. Nothing else in this release has changed.',
+    'The cache name moves with it, so the copy of the page the phone kept offline is replaced the next time the app opens instead of being served from the old build.',
+    'The update bundles carry 84.1.3 as well, so a phone that updates by bundle and a phone that updates by page agree on the number they are on.'
+  ] },
+"""
+
+ANCHOR = """      { version: '84.1.2', date: 'November 13, 2026', title: 'The music does not stop when you leave the app', items: [
+"""
 
 
-def main(argv):
-    check = '--check' in argv
-    src = io.open(PAGE, encoding='utf-8').read()
-    have = 'SideCutJob.hold' in src or "Plugins.SideCutJob" in src
-    if check:
-        if not have or ("const APP_VERSION = '%s';" % VERSION) not in src:
-            sys.exit('patch-8413: the hold is not in the page yet')
+def once(text, old, what):
+    n = text.count(old)
+    if n != 1:
+        raise SystemExit("patch-8413: %s appears %d times, expected exactly 1" % (what, n))
+    return text
+
+
+def patched(page):
+    if ("const APP_VERSION = '%s';" % V) in page:
+        return page
+    once(page, "const APP_VERSION = '%s';" % OLD, "the version line")
+    once(page, ANCHOR, "the 84.1.2 changelog entry")
+    out = page.replace("const APP_VERSION = '%s';" % OLä, "const APP_VERSION = '%s';" % V, 1)
+    out = out.replace(ANCHOR, ENTRY + ANCHOR, 1)
+    return out
+
+
+NOTES = [
+    "The version is 84.1.3. A release here is numbered major.minor.patch, so 84.1.2 is followed by 84.1.3, and the page, the service worker's cache and these notes all say it together. Nothing else in this release has changed.",
+    "The cache name moves with it, so the copy of the page the phone kept offline is replaced the next time the app opens instead of being served from the old build.",
+    "The update bundles carry 84.1.3 as well, so a phone that updates by bundle and a phone that updates by page agree on the number they are on.",
+]
+
+
+def updates_json():
+    raw = io.open(UPDATES, encoding="utf-8").read()
+    data = json.loads(raw)
+    if data.get("version") == V:
+        return raw
+    data["version"] = V
+    data["notes"] = NOTES
+    data["date"] = DATE
+    out = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+    if raw.endswith("\n"):
+        out += "\n"
+    return out
+
+
+def main():
+    check = "--check" in sys.argv
+    page = io.open(PAGE, encoding="utf-8").read()
+    sw = io.open(SW, encoding="utf-8").read()
+    out = patched(page)
+    sw_new = sw.replace("sidecut-shell-v%s" % OLD, "sidecut-shell-v%s" % V)
+    upd_new = updates_json()
+    if out == page and sw_new == sw and upd_new == io.open(UPDATES, encoding="utf-8").read():
+        print("already on the page")
         return 0
-
-    if not have:
-        if src.count(ANCHOR) != 1:
-            sys.exit('patch-8413: the battery saver anchor is not in the page exactly once')
-        src = src.replace(ANCHOR, ANCHOR + HOLD, 1)
-
-    if ("const APP_VERSION = '%s';" % OLD_VERSION) in src:
-        src = src.replace("const APP_VERSION = '%s';" % OLD_VERSION,
-                          "const APP_VERSION = '%s';" % VERSION, 1)
-    io.open(PAGE, 'w', encoding='utf-8').write(src)
-
-    sw = io.open(SW, encoding='utf-8').read()
-    io.open(SW, 'w', encoding='utf-8').write(
-        sw.replace('sidecut-shell-v%s' % OLD_VERSION, 'sidecut-shell-v%s' % VERSION))
-
-    upd = json.load(io.open(UPD, encoding='utf-8'))
-    upd['version'] = VERSION
-    upd['date'] = 'November 14, 2026'
-    upd['notes'] = [NOTES]
-    io.open(UPD, 'w', encoding='utf-8').write(json.dumps(upd, ensure_ascii=False) + '\n')
-
-    out = io.open(PAGE, encoding='utf-8').read()
-    if 'SideCutJob' not in out:
-        sys.exit('patch-8413: result is not what was intended')
-    print('patch-8413: a playing song holds the app awake, page is %s' % VERSION)
+    if check:
+        print("not applied yet")
+        return 1
+    once(sw, "sidecut-shell-v%s" % OLD, "the cache name")
+    io.open(PAGE, "w", encoding="utf-8").write(out)
+    io.open(SW, "w", encoding="utf-8").write(sw_new)
+    io.open(UPDATES, "w", encoding="utf-8").write(upd_new)
+    print("page at %s, cache at sidecut-shell-v%s, updates.json rewritten" % (V, V))
     return 0
 
 
-if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+if __name__ == "__main__":
+    sys.exit(main())
