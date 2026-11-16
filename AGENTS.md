@@ -1,5 +1,21 @@
 # SideCut — repository memory
 
+## 84.1.3 (November 16, 2026 · 9:04 AM EDT): the version, the cache and the notes move to 84.1.3
+
+A version-only release, cut the same way 84.0.0 was: `const APP_VERSION` in
+`index.html`, the `sidecut-shell-v` name in `sw.js`, the first entry in the
+release-notes array and `updates.json` all move from 84.1.2 to 84.1.3 together, and
+nothing a user can see changes. The point is that the number the app reports, the
+cache it installs offline and the notes it shows are the same number, and that the
+OTA bundles carry it.
+
+`dev/patch-8413.py` touches exactly three things: the version line, the cache name,
+and one new entry prepended to the notes array (`updates.json` is rewritten from the
+same notes). Its anchors are the version line and the 84.1.2 notes entry, each
+matched exactly once - the guard that stops a release landing on the wrong build.
+
+Bundles on this release: `ota/updates.json` 1266134 bytes, `ota-play/updates.json`
+1266148 bytes. Page-only: no native change, so the APK is not rebuilt.
 ## 84.1.2 (November 13, 2026 · 7:58 PM EDT)
 
 **The music does not stop when you leave the app.** A song that is playing now keeps the
