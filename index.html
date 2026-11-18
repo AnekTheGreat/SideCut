@@ -19873,52 +19873,58 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.1.0 - THE MUSIC VIDEO TAB, SECOND PASS ─────────────────────────────
-  // WHY 85.0.0 DID NOT PLAY. Three things, and the first is the one that was
-  // fatal on a phone:
+  // ─── 85.1.1 - THE MUSIC VIDEO, ITS OWN SOUND AND ITS OWN BUTTON ────────────
+  // WHAT WAS STILL WRONG IN 85.1.0. The tab played a picture and left the song
+  // as the sound, so the two were only as right as the match between them: a
+  // search could land on a live take, a cover or a sped-up upload and the frame
+  // would show one recording while the speakers played another. And when the
+  // two really were the same recording, the song was still the sound, which is
+  // not what a music video is.
   //
-  //   1. play() was called after the resolver's network round trip. A WebView
-  //      that has not been given a gesture since the tap refuses that call with
-  //      NotAllowedError, and the rejection was caught and dropped - so the
-  //      element sat on its first frame and the panel said nothing.
-  //   2. The element was hidden behind the status text until loadeddata fired.
-  //      On a refused or slow source that is a black panel that looks broken,
-  //      not a video waiting.
-  //   3. A refused direct URL fell straight to the byte reader, which on the web
-  //      build cannot read googlevideo (no CORS header), so the path that does
-  //      work in a browser was never tried for the alternates.
+  // THE AUDIO IS THE VIDEO'S NOW. A muxed stream (itag 18 and friends) carries
+  // its own AAC track, so the element is unmuted and the song underneath is
+  // paused: one sound, and it is the one the picture belongs to. On close the
+  // song is put back at the second the video stopped on, so the tab is a detour
+  // and not a fork. A stream with no audio track (an adaptive-only row) keeps
+  // the song as its soundtrack, stays muted, and says so on the footer - the
+  // honest fallback rather than silence.
   //
-  // THIS PASS, AND THE BUTTONS. The picture is visible from the moment a source
-  // is set, and the controls are the app's own, drawn on the picture instead of
-  // handed to the browser's gray strip: a round PLAY / PAUSE button that changes
-  // its icon with the frame, a progress line and the clock beside it, and NEXT
-  // and FULL at the end of the same pill. They live INSIDE the stage, so they are
-  // in reach in portrait and landscape, and the round button is also the way back
-  // in when the phone refuses autoplay - the same button that asked for the tap
-  // starts the song and the picture together, so the animation runs with sound
-  // rather than silently.
+  // THE VIDEO IS MATCHED, NOT JUST FOUND. For a file the host is still asked by
+  // "artist title", but the candidates are re-ranked against the song's own
+  // length: within six seconds earns the top of the list, more than about a
+  // tenth of the song away loses it, and a live take, cover, remix, instrumental
+  // or nightcore upload is pushed down. A catalogue song keeps its own video id.
   //
-  // The transport drives the SONG, because the video is a view of the song: it
-  // plays muted on the song's clock, follows play and pause, and re-seats itself
-  // when it drifts. One timeline, one sound, so the picture can never become a
-  // second player.
+  // THE PLAY BUTTON IS ITS OWN. The glyph that waits over a stopped video is
+  // not the app's plain play triangle: a frosted disc, a warm gradient triangle
+  // with soft corners, an inner highlight and a slow ripple that says "tap me"
+  // without a label. The small round button in the transport uses the same
+  // drawn triangle, so the tab reads as one control set rather than a stock one.
   //
-  // Every failing step now prints a line on the stage instead of being
-  // swallowed: the resolver, the direct URL, each alternate, the reader, and the
-  // decoder's own MediaError.
+  // Everything 85.1.0 earned stays: the frame is visible before it plays, a
+  // refusal is printed with its name instead of swallowed, the alternates are
+  // tried before the byte reader, and every failing step says which step it was.
 
   var scVideoState = {
     open: false, busy: false, tick: null, cands: [], ci: 0,
     title: '', artist: '', videoId: '', pick: null, alts: [], alt: 0,
-    blobUrl: '', via: '', audio: null, blocked: false, last: null
+    blobUrl: '', via: '', audio: null, blocked: false, last: null,
+    audioMode: 'song', songWasPlaying: false, startAt: null
   };
 
   function scVideoEl(id){ try{ return document.getElementById(id); }catch(_e){ return null; } }
 
+  var SC_VTRI = '<defs><linearGradient id="scVgrad" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="#FFE3B8"/><stop offset=".55" stop-color="#FFB07A"/>' +
+    '<stop offset="1" stop-color="#FF7A55"/></linearGradient></defs>' +
+    '<path d="M9.4 6.4c0-1.05 1.15-1.7 2.05-1.15l7.5 4.9c.85.55.85 1.8 0 2.35l-7.5 4.9c-.9.55-2.05-.1-2.05-1.15z" ' +
+    'fill="url(#scVgrad)" stroke="rgba(255,255,255,.55)" stroke-width=".7" stroke-linejoin="round"/>';
   var SC_VICON_PLAY = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">' +
-    '<path d="M8.5 5.2v13.6L19 12z" fill="currentColor"/></svg>';
+    '<path d="M9 6.6c0-.95 1.05-1.55 1.85-1.05l6.6 4.35c.75.5.75 1.6 0 2.1l-6.6 4.35c-.8.5-1.85-.1-1.85-1.05z" fill="currentColor"/></svg>';
   var SC_VICON_PAUSE = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">' +
-    '<path d="M7.2 5h3.3v14H7.2zM13.5 5h3.3v14h-3.3z" fill="currentColor"/></svg>';
+    '<rect x="7" y="5.2" width="3.5" height="13.6" rx="1.5" fill="currentColor"/>' +
+    '<rect x="13.5" y="5.2" width="3.5" height="13.6" rx="1.5" fill="currentColor"/></svg>';
+  var SC_VICON_BIG = '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">' + SC_VTRI + '</svg>';
 
   function scVideoCss(){
     if(scVideoEl('scVideoCss')) return;
@@ -19944,12 +19950,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
       'overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.09);box-shadow:0 24px 60px rgba(0,0,0,.55);',
       'touch-action:manipulation}',
       '#scVideoEl{max-width:100%;max-height:100%;width:auto;height:auto;background:#000;display:block}',
-      '#scVideoBig{position:absolute;width:74px;height:74px;border-radius:999px;border:0;display:none;place-items:center;',
-      'background:color-mix(in srgb, var(--coral) 94%, #fff);color:#062220;cursor:pointer;',
-      'box-shadow:0 14px 34px rgba(0,0,0,.5);padding:0}',
+      // THE PLAY BUTTON BEFORE A VIDEO STARTS. A frosted disc with a warm
+      // gradient triangle and a ripple, not the app's plain glyph: this is the
+      // one control in the app that is allowed to be a poster.
+      '#scVideoBig{position:absolute;width:88px;height:88px;border-radius:999px;display:none;place-items:center;',
+      'border:1px solid rgba(255,255,255,.34);cursor:pointer;padding:0;color:#fff;',
+      'background:radial-gradient(120% 120% at 32% 22%, rgba(255,255,255,.34), rgba(255,255,255,.08) 44%, rgba(0,0,0,.34));',
+      '-webkit-backdrop-filter:blur(16px) saturate(1.35);backdrop-filter:blur(16px) saturate(1.35);',
+      'box-shadow:0 18px 46px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.42),',
+      'inset 0 -10px 24px rgba(0,0,0,.22), 0 0 36px color-mix(in srgb, var(--coral) 32%, transparent);',
+      'transition:transform .16s ease}',
       '#scVideoBig.on{display:grid}',
-      '#scVideoBig svg{width:26px;height:26px;margin-left:3px}',
-      '#scVideoBig:active{transform:scale(.95)}',
+      '#scVideoBig::before{content:"";position:absolute;inset:-7px;border-radius:999px;pointer-events:none;',
+      'border:1.5px solid color-mix(in srgb, var(--coral) 58%, transparent);animation:scVripple 2.6s ease-out infinite}',
+      '@keyframes scVripple{0%{transform:scale(.9);opacity:.8}70%{transform:scale(1.16);opacity:0}100%{opacity:0}}',
+      '#scVideoBig svg{width:30px;height:30px;margin-left:5px;filter:drop-shadow(0 3px 10px rgba(0,0,0,.5))}',
+      '#scVideoBig:active{transform:scale(.94)}',
       '#scVideoSpin{position:absolute;width:32px;height:32px;border-radius:999px;border:3px solid rgba(255,255,255,.16);',
       'border-top-color:var(--coral);animation:scVspin .9s linear infinite;display:none}',
       '#scVideoSpin.on{display:block}',
@@ -19957,14 +19973,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scVideoSay{position:absolute;left:0;right:0;bottom:0;padding:12px 14px 64px;font-size:11.5px;line-height:1.5;',
       'color:#d9e8e4;background:linear-gradient(0deg, rgba(0,0,0,.82), rgba(0,0,0,0));display:none;text-align:left}',
       '#scVideoSay.on{display:block}',
-      // THE CONTROLS ARE THE APP'S OWN: a pill on the picture, not the browser's strip.
       '#scVideoCtl{position:absolute;left:9px;right:9px;bottom:9px;display:flex;align-items:center;gap:10px;',
       'box-sizing:border-box;padding:7px 10px 7px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.13);',
       'background:rgba(6,14,14,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}',
       '#scVideoPlay{width:42px;height:42px;border-radius:999px;border:0;display:grid;place-items:center;',
-      'background:var(--coral);color:#062220;cursor:pointer;flex:0 0 auto;padding:0;transition:transform .12s}',
+      'background:linear-gradient(145deg, #FFB478, #FF7A55);color:#2A1206;cursor:pointer;flex:0 0 auto;padding:0;',
+      'box-shadow:0 6px 16px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.45);transition:transform .12s}',
       '#scVideoPlay:active{transform:scale(.94)}',
-      '#scVideoPlay.paused svg{margin-left:2px}',
       '#scVideoProg{position:relative;flex:1 1 auto;min-width:40px;height:4px;border-radius:999px;',
       'background:rgba(255,255,255,.18);overflow:hidden}',
       '#scVideoFill{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--coral);',
@@ -19978,7 +19993,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scVideoFoot{padding:9px 6px 0;font-size:10px;line-height:1.4;color:var(--ink-dim);opacity:.85;',
       'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '@media (orientation:landscape){#scVideoHead{padding-bottom:6px} #scVideoStage{border-radius:14px}',
-      '#scVideoFoot{display:none} #scVideoSay{padding-bottom:52px}}',
+      '#scVideoFoot{display:none} #scVideoSay{padding-bottom:52px} #scVideoBig{width:76px;height:76px}}',
       'body.sc-video-open{overflow:hidden}'
     ].join('');
     document.head.appendChild(st);
@@ -19996,9 +20011,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
         '<button type="button" id="scVideoClose" title="Close" aria-label="Close">&#215;</button>' +
       '</div>' +
       '<div id="scVideoStage">' +
-        '<video id="scVideoEl" playsinline webkit-playsinline muted preload="auto"></video>' +
+        '<video id="scVideoEl" playsinline webkit-playsinline preload="auto"></video>' +
         '<div id="scVideoSpin" aria-hidden="true"></div>' +
-        '<button type="button" id="scVideoBig" aria-label="Play">' + SC_VICON_PLAY + '</button>' +
+        '<button type="button" id="scVideoBig" aria-label="Play">' + SC_VICON_BIG + '</button>' +
         '<div id="scVideoSay"></div>' +
         '<div id="scVideoCtl">' +
           '<button type="button" id="scVideoPlay" class="paused" aria-label="Play">' + SC_VICON_PLAY + '</button>' +
@@ -20033,7 +20048,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
       v.addEventListener('stalled', function(){ scVideoSpin(true); });
       v.addEventListener('canplay', function(){ scVideoSpin(false); });
       v.addEventListener('timeupdate', scVideoClock);
-      v.addEventListener('loadedmetadata', function(){ scVideoSpin(false); scVideoClock(); });
+      v.addEventListener('loadedmetadata', function(){
+        scVideoSpin(false);
+        // The picture starts where the song was, so opening the tab is not a rewind.
+        if(scVideoState.startAt != null){
+          try{ v.currentTime = scVideoState.startAt; }catch(_eAt){}
+          scVideoState.startAt = null;
+        }
+        scVideoClock();
+      });
       v.addEventListener('ended', function(){ scVideoBig(true); scVideoBarState(); });
       v.addEventListener('error', scVideoFailed);
     }
@@ -20073,8 +20096,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoBarState();
   }
 
-  // The song on the screen: the stream while the stream owns the bar, the deck's
-  // queue position otherwise. Reads only.
   function scVideoTrack(){
     try{
       if(typeof scStreamState === 'object' && scStreamState && scStreamState.barOn && scStreamState.curId){
@@ -20097,6 +20118,34 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoAudioEl(){
     try{ if(typeof scStreamState === 'object' && scStreamState && scStreamState.barOn && scStreamState.curId) return scStreamAudio(); }catch(_eVa){}
     try{ return activeAudio(); }catch(_eVo){ return null; }
+  }
+  function scVideoSongTime(){
+    var a = scVideoAudioEl();
+    var t = 0;
+    try{ t = a ? (Number(a.currentTime) || 0) : 0; }catch(_eSt){ t = 0; }
+    return t;
+  }
+
+  // One sound at a time: while the video carries its own audio the song is
+  // paused, and the second it stops is remembered so the song can be put back.
+  function scVideoHoldSong(){
+    var a = scVideoAudioEl();
+    if(a && !a.paused){ scVideoState.songWasPlaying = true; }
+    try{ if(a && !a.paused) a.pause(); }catch(_eHold){}
+    try{ if(typeof audio !== 'undefined' && audio && !audio.paused) audio.pause(); }catch(_eD1){}
+    try{ if(typeof audio2 !== 'undefined' && audio2 && !audio2.paused) audio2.pause(); }catch(_eD2){}
+  }
+  function scVideoReleaseSong(){
+    if(scVideoState.audioMode !== 'video'){ scVideoState.songWasPlaying = false; return; }
+    var a = scVideoAudioEl(), v = scVideoEl('scVideoEl');
+    var at = v ? (Number(v.currentTime) || 0) : 0;
+    var dur = 0;
+    try{ dur = a ? (Number(a.duration) || 0) : 0; }catch(_eDur){ dur = 0; }
+    if(a && scVideoState.songWasPlaying){
+      try{ if(at > 0 && (!dur || at < dur - 1)) a.currentTime = at; }catch(_eSeek){}
+      try{ var p = a.play(); if(p && p.catch) p.catch(function(){}); }catch(_ePlay){}
+    }
+    scVideoState.songWasPlaying = false;
   }
 
   // The player call, with the two clients that still answer (the same pair
@@ -20141,10 +20190,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }catch(_eAsk){ return Promise.resolve(null); }
     });
     return Promise.all(asks).then(function(answers){
-      var title = '';
+      var title = '', details = null;
       (answers || []).forEach(function(d){
         if(!d || !d.streamingData) return;
         if(!title && d.videoDetails && d.videoDetails.title) title = String(d.videoDetails.title);
+        if(!details && d.videoDetails) details = d.videoDetails;
         take(d.streamingData.formats, muxed, true);
         take(d.streamingData.adaptiveFormats, adaptive, false);
       });
@@ -20153,12 +20203,41 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var pool = muxed.concat(adaptive);
       if(!pool.length) return null;
       return { url: pool[0].url, mime: pool[0].mime, size: pool[0].size, itag: pool[0].itag,
-               muxed: !!pool[0].muxed, alts: pool.slice(1), title: title, label: label(pool[0]) };
+               muxed: !!pool[0].muxed, alts: pool.slice(1), title: title, label: label(pool[0]),
+               length: Number(details && details.lengthSeconds) || 0 };
     }).catch(function(){ return null; });
   }
 
-  // A file has no video id: ask the host for one with the converter's ranking,
-  // and keep the top few so NEXT has somewhere to go.
+  // A file has no video id, so the host is asked, and what comes back is put in
+  // the order the SONG agrees with: length first, credit second, and anything
+  // that advertises itself as a different take demoted.
+  function scVideoRank(list, t){
+    var songDur = 0;
+    try{ var a = scVideoAudioEl(); songDur = a && isFinite(a.duration) ? (Number(a.duration) || 0) : 0; }catch(_eSd){ songDur = 0; }
+    var otherTake = /\blive\b|cover|karaoke|remix|sped\s*up|slowed|nightcore|\b8d\b|instrumental|reaction|tutorial|lesson|behind the scenes|teaser|trailer/i;
+    var artist = String((t && t.artist) || '').toLowerCase().split(/\s*(?:,|&|\bfeat\b|\bft\b|\bx\b)\s*/)[0].trim();
+    var rows = (list || []).map(function(c, i){
+      var s = -i * 2;                                  // the host's own ranking is the floor
+      var dur = Number(c.duration) || 0;
+      if(songDur > 0 && dur > 0){
+        var diff = Math.abs(dur - songDur);
+        if(diff <= 6) s += 16;
+        else if(diff <= 15) s += 7;
+        else if(diff > Math.max(25, songDur * 0.12)) s -= 26;   // a different recording
+        else s -= 4;
+      }
+      if(otherTake.test(String(c.title || ''))) s -= 14;
+      var owner = String(c.owner || '').toLowerCase();
+      if(artist && owner && owner.indexOf(artist) !== -1) s += 9;
+      if(/\btopic\b|\bvevo\b/.test(owner)) s += 5;
+      return { c: c, s: s, i: i, dur: dur, far: !!(songDur > 0 && dur > 0 && Math.abs(dur - songDur) > Math.max(25, songDur * 0.12)) };
+    });
+    rows.sort(function(x, y){ return (y.s - x.s) || (x.i - y.i); });
+    var kept = rows.filter(function(r){ return !r.far; });
+    var use = kept.length ? kept : rows;
+    return use.map(function(r){ return r.c; });
+  }
+
   function scVideoSearch(t){
     var q = (String((t && t.artist) || '') + ' ' + String((t && t.title) || '')).trim();
     if(!q) return Promise.resolve([]);
@@ -20166,7 +20245,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       return Promise.resolve(scYtSearch(q, (t && t.artist) || '', ''))
         .then(function(cands){
           if(!cands || !cands.length) return [];
-          return cands.slice(0, 6).map(function(c){
+          var picked = scVideoRank(cands.slice(0, 8), t);
+          return picked.slice(0, 6).map(function(c){
             return { videoId: String(c.videoId || ''), title: String(c.title || ''), owner: String(c.owner || '') };
           }).filter(function(c){ return !!c.videoId && c.videoId.indexOf('ia:') !== 0; });
         })
@@ -20175,18 +20255,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   // ── playback ---------------------------------------------------------------
-  // One door for a source: set it, show the frame, try to start, and let the
-  // rejection speak instead of vanishing.
   function scVideoAttach(src, via){
     var v = scVideoEl('scVideoEl');
     if(!v || !src) return;
+    var videoSound = scVideoState.audioMode === 'video';
     scVideoState.via = via;
     scVideoState.blocked = false;
     scVideoState.audio = scVideoAudioEl();
+    scVideoState.startAt = videoSound ? scVideoSongTime() : null;
     try{ v.removeAttribute('src'); }catch(_eRm){}
     v.src = src;
-    v.muted = true;
+    v.muted = !videoSound;          // the video's own audio when the stream has one
+    try{ v.volume = 1; }catch(_eVol){}
     try{ v.load(); }catch(_eLoad){}
+    if(videoSound) scVideoHoldSong();
     scVideoBig(false);
     scVideoSpin(true);
     scVideoSay('Starting the video…');
@@ -20209,7 +20291,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoState.blocked = true;
         scVideoSpin(false);
         scVideoBig(true);
-        scVideoSay('Tap the picture or PLAY to start. (' + ((e && e.name) || 'blocked') + ')');
+        scVideoSay('Tap to play. (' + ((e && e.name) || 'blocked') + ')');
         scVideoBarState();
       });
     } else {
@@ -20226,19 +20308,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_eSong){}
   }
 
-  // A tap is a gesture: it can start the sound and the picture together.
   function scVideoTap(){
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src){ if(scVideoState.open) scVideoStart(scVideoState.last || scVideoTrack()); return; }
     if(v.paused){
       scVideoState.blocked = false;
-      scVideoSong(true);
+      // The video is the sound in video mode; the song is only started when the
+      // stream had no audio track of its own.
+      if(scVideoState.audioMode === 'video') scVideoHoldSong(); else scVideoSong(true);
       scVideoPlayAttempt();
       scVideoSpin(true);
       scVideoBig(false);
     } else {
-      scVideoSong(false);
       try{ v.pause(); }catch(_eP){}
+      if(scVideoState.audioMode !== 'video') scVideoSong(false);
       scVideoBig(true);
       scVideoBarState();
     }
@@ -20247,7 +20330,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoSync(force){
     var v = scVideoEl('scVideoEl');
     var a = scVideoState.audio || scVideoAudioEl();
-    if(!v || !a || !v.src || v.readyState < 1) return;
+    if(!v || !v.src) return;
+    // THE VIDEO'S AUDIO IS THE SOUND: there is nothing to line up with the
+    // song, and the song is paused underneath it by design.
+    if(scVideoState.audioMode === 'video'){ scVideoClock(); return; }
+    if(!a || v.readyState < 1) return;
     scVideoState.audio = a;
     try{
       var at = Number(a.currentTime) || 0;
@@ -20266,7 +20353,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(scVideoState.tick){ clearInterval(scVideoState.tick); scVideoState.tick = null; }
   }
 
-  // The element refused the source: try the next direct URL, then read the bytes.
   function scVideoFailed(){
     var v = scVideoEl('scVideoEl');
     var why = 'the element could not play this source';
@@ -20292,7 +20378,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoSpin(false);
     scVideoBig(true);
     scVideoSay('This video could not be played here (' + why + '). NEXT tries another result.');
-    scVideoFoot('The song is still playing underneath - close this tab to go back to it.');
+    scVideoFoot('Close this tab to go back to the song.');
   }
 
   function scVideoRead(){
@@ -20318,7 +20404,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var type = String(c.mime || 'video/mp4').split(';')[0].trim() || 'video/mp4';
       try{ scVideoState.blobUrl = URL.createObjectURL(new Blob([buf], { type: type })); }
       catch(_eBlob){ scVideoSpin(false); scVideoSay('The video could not be held in memory.'); return; }
-      scVideoFoot('Read into memory - the song is the soundtrack.');
       scVideoAttach(scVideoState.blobUrl, 'blob');
     }).catch(function(){
       scVideoSpin(false); scVideoBig(true);
@@ -20350,10 +20435,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
       scVideoState.pick = { url: r.url, mime: r.mime, size: r.size };
       scVideoState.alts = (r.alts || []).slice();
+      scVideoState.audioMode = r.muxed ? 'video' : 'song';
       if(r.title) scVideoTitle(r.title, cand.owner || '');
       scVideoChip(r.label || '');
-      scVideoFoot(r.muxed ? 'Picture from the video, sound from the song.' : 'Picture only - the song is the soundtrack.');
+      scVideoFoot(r.muxed
+        ? 'This is the video own sound - the song waits where you left it.'
+        : 'No audio in this stream - the song plays under the picture.');
       scVideoAttach(r.url, 'direct');
+      scVideoTickStart();
       return true;
     }).catch(function(){
       scVideoState.busy = false;
@@ -20392,7 +20481,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoState.cands = cands;
       scVideoState.ci = 0;
       if(other) other.style.display = (cands.length > 1 ? '' : 'none');
-      scVideoFoot('Found by search · ' + cands.length + ' result' + (cands.length === 1 ? '' : 's') + (cands.length > 1 ? ' · NEXT for another' : ''));
+      scVideoFoot('Matched by length · ' + cands.length + ' result' + (cands.length === 1 ? '' : 's') + (cands.length > 1 ? ' · NEXT for another' : ''));
       return scVideoLoad(cands[0]);
     });
   }
@@ -20440,10 +20529,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ v.pause(); }catch(_ePause){}
       try{ v.removeAttribute('src'); v.load(); }catch(_eClear){}
     }
+    // The song picks up where the video stopped, so the tab is a detour.
+    scVideoReleaseSong();
     try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev2){}
     scVideoState.blobUrl = '';
     scVideoState.pick = null;
     scVideoState.alts = [];
+    scVideoState.startAt = null;
     scVideoBig(false);
     scVideoSpin(false);
     scVideoSay('');
@@ -21684,7 +21776,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.1.0';
+  const APP_VERSION = '85.1.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -22394,6 +22486,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.1.1', date: 'November 18, 2026', title: 'The video plays its own sound, and its play button is its own', items: [
+    'The video plays its own sound now. A stream that carries an audio track is unmuted and the song is paused underneath it, so what you hear is the recording you see, and closing the tab puts the song back at the second the video stopped on. A stream with no audio track keeps the song as its soundtrack and says so.',
+    'The video is matched to the song instead of just found: results are re-ranked against the length of the song, and a take more than about a tenth away - or one that calls itself live, a cover, a remix or sped up - is pushed down the list. A song from the source keeps its own video id.',
+    'The play button that waits over a stopped video is drawn for this tab: a frosted disc, a warm gradient triangle with soft corners and a slow ripple. The round button in the transport uses the same drawn triangle, so the tab reads as one control set.',
+    'Limits, stated plainly: a music video whose intro is longer than the song will still start a few seconds behind the words, because the picture follows the second the song is on and not the other way round. Nothing is downloaded and nothing is kept.'
+  ] },
       { version: '85.1.0', date: 'November 18, 2026', title: 'The music video plays, with its own play and pause', items: [
     'The music video tab plays, and the play and pause buttons are drawn by SideCut itself: a round button on the picture that swaps between the two, with a progress line and the clock beside it, and NEXT and FULL at the end of the same pill. Where the phone will not start a video on its own, that button is the way in, and it starts the song and the picture together.',
     'The reason 85.0.0 sat on a black frame: the video was asked to start after the player had been asked for it, which a WebView refuses without a fresh tap, and the refusal was dropped. The picture now shows as soon as it has a source, and every step that fails says so on the screen - the lookup, the direct stream, each alternate, the reader, and the decoder code the phone reports.',
