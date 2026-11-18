@@ -204,12 +204,13 @@
       // The chip is a button now: the size the picture is at, and the way in to
       // every other size. Its chevron is drawn by the stylesheet so the label
       // can be replaced with a plain string.
-      '#scVideoHead .sv-chip{display:inline-flex;align-items:center;gap:5px;font-family:"JetBrains Mono",monospace;',
+      '#scVideoHead .sv-chip{display:inline-flex;align-items:center;gap:5px;width:auto;height:auto;font-family:"JetBrains Mono",monospace;',
       'font-size:9px;font-weight:700;letter-spacing:1px;color:var(--coral);cursor:pointer;',
       'border:1px solid color-mix(in srgb, var(--coral) 45%, transparent);background:rgba(255,255,255,.04);',
       'border-radius:999px;padding:6px 9px;flex:0 0 auto;transition:transform .12s}',
       '#scVideoHead .sv-chip::after{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;',
       'border-bottom:1.5px solid currentColor;transform:translateY(-1px) rotate(45deg);opacity:.85}',
+      '#scVideoHead .sv-chip.on::after{transform:translateY(1px) rotate(-135deg)}',
       '#scVideoHead .sv-chip:active{transform:scale(.94)}',
       '#scVideoHead button{width:34px;height:34px;border-radius:999px;border:1px solid var(--line);',
       'background:rgba(255,255,255,.05);color:var(--ink-dim);font-size:14px;line-height:1;cursor:pointer;flex:0 0 auto}',
@@ -218,7 +219,7 @@
       'overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.09);box-shadow:0 24px 60px rgba(0,0,0,.55);',
       'touch-action:manipulation}',
       '#scVideoEl{max-width:100%;max-height:100%;width:auto;height:auto;background:#000;display:block}',
-      '#scVideoAuxEl{display:none}',
+      '#scVideoAuxEl{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0}',
       '#scVideoBig{position:absolute;width:88px;height:88px;border-radius:999px;display:none;place-items:center;',
       'border:1px solid rgba(255,255,255,.34);cursor:pointer;padding:0;color:#fff;',
       'background:radial-gradient(120% 120% at 32% 22%, rgba(255,255,255,.34), rgba(255,255,255,.08) 44%, rgba(0,0,0,.34));',
@@ -289,7 +290,7 @@
       '#scVideoBackdrop.sc-vwide #scVideoStage{position:fixed;inset:0;border:0;border-radius:0;box-shadow:none}',
       '#scVideoBackdrop.sc-vwide #scVideoEl{width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}',
       '#scVideoBackdrop.sc-vwide #scVideoHead{position:absolute;z-index:7;top:calc(env(safe-area-inset-top) + 8px);',
-      'left:calc(env(safe-area-inset-left) + 10px);right:calc(env(safe-area-inset-right) + 10px);padding:0}',
+      'left:calc(env(safe-area-inset-left) + 10px);right:calc(env(safe-area-inset-right) + 10px);padding:0;justify-content:flex-end}',
       '#scVideoBackdrop.sc-vwide #scVideoHead .sv-t{display:none}',
       '#scVideoBackdrop.sc-vwide #scVideoCtl{left:calc(env(safe-area-inset-left) + 14px);',
       'right:calc(env(safe-area-inset-right) + 14px);bottom:calc(env(safe-area-inset-bottom) + 12px)}',

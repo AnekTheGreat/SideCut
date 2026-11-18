@@ -118,6 +118,10 @@ function answer(formats, adaptive){
   ok('the landscape button replaced FULL', /id="scVideoLand"/.test(markup) && !/id="scVideoFull"/.test(markup));
   ok('the paired soundtrack element exists', /id="scVideoAuxEl"/.test(markup));
   ok('landscape has a layout of its own', /sc-vwide #scVideoStage\{position:fixed/.test(css.text));
+  ok('the size chip keeps its own width and height', /sv-chip\{display:inline-flex[^}]*width:auto;height:auto/.test(css.text));
+  ok('the chip chevron turns while the list is open', /sv-chip\.on::after\{transform:[^}]*rotate\(-135deg\)/.test(css.text));
+  ok('the wide header keeps its controls on the right', /sc-vwide #scVideoHead\{[^}]*justify-content:flex-end/.test(css.text));
+  ok('the soundtrack keeps a box in the page', /#scVideoAuxEl\{position:absolute[^}]*width:1px;height:1px/.test(css.text));
   els.scVideoBackdrop = stub('scVideoBackdrop');
   els.scVideoStage = stub('scVideoStage');
 
