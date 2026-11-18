@@ -19873,33 +19873,40 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.1.2 - A LADDER OF QUALITIES, AND A PICTURE THAT TURNS SIDEWAYS ──────
-  // WHAT 85.1.1 COULD NOT DO. The player handed the tab one progressive stream
-  // (itag 18, 360p) and that was the whole picture. The adaptive rows the same
-  // answer carried - 480p, 720p, 1080p, 1440p, 2160p - were only ever fallbacks,
-  // never a choice, so a music video stayed soft on a phone that could show it
-  // sharp.
+  // ─── 85.2.0 - THE SAME SECOND AT EVERY SIZE, AND A TRANSPORT THAT STEPS ASIDE ─
+  // WHAT 85.1.2 COULD NOT DO. A size change attached both the picture and the
+  // paired soundtrack at zero, and it asked the soundtrack to start there before
+  // that element had a duration - which a phone ignores. So the soundtrack began
+  // at 0:00 while the picture was two minutes in, the picture was then nudged
+  // onto that clock (85.1.2 made the soundtrack the clock), and the film - and
+  // the song that follows it out of the tab - restarted from the beginning.
   //
-  // THE LADDER IS BUILT FROM THE ANSWER, NOT FROM A LIST. Every video-only row is
-  // grouped by the height it really is, the codec the WebView can open wins its
-  // height (H.264 before VP9 before AV1), and a muxed row of the same height
-  // beats both because it carries its own sound in one stream. The menu shows
-  // only the sizes this video actually has.
+  // THE PICTURE IS THE CLOCK NOW. A second the element is not ready for is kept
+  // on the element and applied the moment it knows its own duration, for the
+  // picture and for its soundtrack both. The soundtrack is nudged onto the
+  // picture, never the other way round, because a backwards seek in the picture
+  // is the thing you can see. A change made while the picture is paused stays
+  // paused, and the swap no longer clears the element first, so a size change is
+  // not a black flash either.
   //
-  // THE SOUND DOES NOT CHANGE OWNER WHEN THE PICTURE DOES. Above the one-stream
-  // sizes the answer also carries the same video's audio as its own row. That row
-  // plays in a second, hidden element while the picture is muted, and the picture
-  // is nudged onto its clock: still the video's own recording, still not the
-  // song. A stream with no audio row keeps the song as its soundtrack, exactly as
-  // 85.1.1 left it.
+  // A SIZE THAT NEVER STARTS IS NOT A BLACK PANEL. If nothing has played nine
+  // seconds after a size is attached, the tab walks the same road a refusal
+  // takes: another codec at that height, then the best one-stream size, and the
+  // footer says which. A size the phone cannot open no longer forgets the size
+  // the owner chose.
   //
-  // THE PICTURE CAN TURN SIDEWAYS. FULL was a fullscreen request on the <video>,
-  // which took the app's own controls away with it. The landscape button makes
-  // the stage full-bleed, asks the phone for fullscreen and landscape, and keeps
-  // the transport, the quality list and the close button on the glass.
+  // THE TRANSPORT STEPS ASIDE IN LANDSCAPE. Two seconds after the last touch the
+  // transport, the title row and the size chip fade off the glass, and a tap on
+  // the picture brings them back without stopping the film. The progress line is
+  // a handle: a two-centimetre touch area, a dot, and a drag to any second that
+  // moves the picture, its soundtrack and the song underneath together.
   //
-  // NOT CLAIMED: 4K is whatever the video gives and the phone decodes. A refused
-  // size falls back to the best one-stream size and says so. Nothing is
+  // WHAT THE LADDER AND THE ORIENTATION DID IN 85.1.2 IS UNTOUCHED. AUTO is still
+  // the best one-stream size, the choice is still remembered, a refused size still
+  // falls back with a line saying so, and the landscape button still turns the
+  // stage rather than the browser's own player.
+  //
+  // NOT CLAIMED: 4K is whatever the video gives and the phone decodes. Nothing is
   // downloaded, nothing is kept, and no size above 64 MB is read into memory.
 
   var scVideoState = {
@@ -19907,11 +19914,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     title: '', artist: '', videoId: '', pick: null, alts: [], alt: 0,
     blobUrl: '', via: '', audio: null, blocked: false, last: null,
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
-    rungs: [], rung: null, want: 0, wide: false
+    rungs: [], rung: null, want: 0, wide: false,
+    wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0,
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
   var SC_VQ_READ_MAX = 64 * 1024 * 1024;   // the byte reader is not a 4K decoder
+  var SC_VQ_IDLE_MS = 2000;                // the transport rests two seconds into landscape
 
   function scVideoEl(id){ try{ return document.getElementById(id); }catch(_e){ return null; } }
 
@@ -20144,10 +20154,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
       'background:linear-gradient(145deg, #FFB478, #FF7A55);color:#2A1206;cursor:pointer;flex:0 0 auto;padding:0;',
       'box-shadow:0 6px 16px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.45);transition:transform .12s}',
       '#scVideoPlay:active{transform:scale(.94)}',
-      '#scVideoProg{position:relative;flex:1 1 auto;min-width:40px;height:4px;border-radius:999px;',
-      'background:rgba(255,255,255,.18);overflow:hidden}',
+      // The progress line is a handle: a 26px touch area around a 4px line, a dot
+      // that says where the finger is, and no width transition while dragging.
+      '#scVideoProg{position:relative;flex:1 1 auto;min-width:44px;height:4px;border-radius:999px;margin:9px 0;',
+      'background:rgba(255,255,255,.18);cursor:pointer;touch-action:none}',
+      '#scVideoProg::before{content:"";position:absolute;left:-6px;right:-6px;top:-11px;bottom:-11px;border-radius:999px}',
       '#scVideoFill{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:999px;background:var(--coral);',
-      'transition:width .25s linear}',
+      'transition:width .25s linear;pointer-events:none}',
+      '#scVideoProg.sc-vseek #scVideoFill{transition:none}',
+      '#scVideoThumb{position:absolute;top:50%;left:0;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:999px;',
+      'background:#fff;opacity:.82;box-shadow:0 1px 5px rgba(0,0,0,.55);transition:opacity .2s,transform .14s;pointer-events:none}',
+      '#scVideoProg.sc-vseek #scVideoThumb{opacity:1;transform:scale(1.28)}',
       '#scVideoClock{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.4px;color:#cfe6e1;',
       'white-space:nowrap;flex:0 0 auto}',
       '#scVideoCtl .sv-mini{height:30px;border-radius:999px;border:1px solid rgba(255,255,255,.16);padding:0 10px;',
@@ -20173,6 +20190,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
       'bottom:calc(env(safe-area-inset-bottom) + 70px);max-height:72%}',
       '#scVideoBackdrop.sc-vwide #scVideoFoot{display:none}',
       '#scVideoBackdrop.sc-vwide #scVideoSay{padding-bottom:78px}',
+      // The scrim under the transport, so the line reads over a bright shot.
+      '#scVideoBackdrop.sc-vwide #scVideoStage::after{content:"";position:absolute;left:0;right:0;bottom:0;height:132px;',
+      'pointer-events:none;z-index:2;transition:opacity .32s ease;',
+      'background:linear-gradient(0deg, rgba(0,0,0,.62), rgba(0,0,0,.22) 46%, transparent)}',
+      // Idle. Two seconds after the last touch the transport, the title row and
+      // the size chip leave the glass together, and a tap brings them back.
+      '#scVideoBackdrop.sc-vwide #scVideoHead,#scVideoBackdrop.sc-vwide #scVideoCtl{',
+      'transition:opacity .32s ease,transform .32s ease}',
+      '#scVideoBackdrop.sc-vwide.sc-vidle #scVideoHead{opacity:0;pointer-events:none;transform:translateY(-8px)}',
+      '#scVideoBackdrop.sc-vwide.sc-vidle #scVideoCtl{opacity:0;pointer-events:none;transform:translateY(10px)}',
+      '#scVideoBackdrop.sc-vwide.sc-vidle #scVideoStage::after{opacity:0}',
+      '#scVideoBackdrop.sc-vwide.sc-vidle #scVideoQ{display:none}',
       '@media (orientation:landscape){#scVideoHead{padding-bottom:6px} #scVideoStage{border-radius:14px}',
       '#scVideoFoot{display:none} #scVideoSay{padding-bottom:52px} #scVideoBig{width:76px;height:76px}}',
       'body.sc-video-open{overflow:hidden}'
@@ -20204,7 +20233,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
         '</div>' +
         '<div id="scVideoCtl">' +
           '<button type="button" id="scVideoPlay" class="paused" aria-label="Play">' + SC_VICON_PLAY + '</button>' +
-          '<div id="scVideoProg"><div id="scVideoFill"></div></div>' +
+          '<div id="scVideoProg" role="slider" tabindex="0" aria-label="Seek">' +
+            '<div id="scVideoFill"></div><div id="scVideoThumb"></div></div>' +
           '<span id="scVideoClock">0:00 / 0:00</span>' +
           '<button type="button" id="scVideoNext" class="sv-mini" title="Try the next search result" style="display:none;">NEXT</button>' +
           '<button type="button" id="scVideoLand" class="sv-mini sv-icon" title="Landscape" aria-label="Landscape">' + SC_VICON_LAND + '</button>' +
@@ -20229,37 +20259,70 @@ function startLyricsAutoScroll(keepPos, noReset) {
     });
     var stage = scVideoEl('scVideoStage'); if(stage) stage.addEventListener('click', function(e){
       if(e.target && e.target.closest){
-        if(e.target.closest('#scVideoCtl')) return;
-        if(e.target.closest('#scVideoQ')) return;
-        var q = scVideoEl('scVideoQ');
-        if(q && q.classList.contains('on')){ scVideoQualityToggle(false); return; }
+        if(e.target.closest('#scVideoCtl')){ scVideoIdleWake(); return; }
+        if(e.target.closest('#scVideoQ')){
+          if(!e.target.closest('.sv-qr')) scVideoQualityToggle(false);
+          scVideoIdleWake();
+          return;
+        }
       }
+      // IN LANDSCAPE THE FIRST TAP BRINGS THE CONTROLS BACK. It does not also stop
+      // the film the controls were hiding - that is what the round button is for.
+      if(scVideoIdleWake()) return;
+      var q = scVideoEl('scVideoQ');
+      if(q && q.classList.contains('on')){ scVideoQualityToggle(false); return; }
       scVideoTap();
     });
+    // A touch anywhere wakes the transport; in landscape the two-second walk off
+    // the glass starts again from that touch.
+    d.addEventListener('pointerdown', function(){ scVideoIdleWake(); }, true);
+    scVideoWireSeek();
 
     var v = scVideoEl('scVideoEl');
     if(v){
       v.addEventListener('playing', function(){
         scVideoState.blocked = false;
+        scVideoWatchStop();
         scVideoBig(false); scVideoSpin(false); scVideoSay(''); scVideoBarState();
         if(scVideoState.audioMode === 'aux') scVideoAuxPlay();
+        scVideoIdleArm();
       });
-      v.addEventListener('pause', function(){ scVideoBarState(); if(!v.ended && !scVideoState.blocked) scVideoBig(true); });
-      v.addEventListener('waiting', function(){ scVideoSpin(true); });
+      v.addEventListener('pause', function(){
+        scVideoBarState(); scVideoIdleWake();
+        if(!v.ended && !scVideoState.blocked) scVideoBig(true);
+      });
+      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); });
       v.addEventListener('stalled', function(){ scVideoSpin(true); });
-      v.addEventListener('canplay', function(){ scVideoSpin(false); });
+      v.addEventListener('canplay', function(){ scVideoSpin(false); scVideoWatchStop(); });
       v.addEventListener('timeupdate', scVideoClock);
       v.addEventListener('loadedmetadata', function(){
         scVideoSpin(false);
-        // The picture starts where the song was, so opening the tab is not a rewind.
-        if(scVideoState.startAt != null){
-          try{ v.currentTime = scVideoState.startAt; }catch(_eAt){}
-          scVideoState.startAt = null;
-        }
+        // The picture starts where it was, so a size change is not a rewind.
+        if(scVideoState.startAt != null){ scVideoPose(v, scVideoState.startAt); scVideoState.startAt = null; }
+        scVideoPoseTry(v);
         scVideoClock();
       });
-      v.addEventListener('ended', function(){ scVideoBig(true); scVideoBarState(); });
+      v.addEventListener('ended', function(){ scVideoBig(true); scVideoBarState(); scVideoIdleWake(); });
       v.addEventListener('error', scVideoFailed);
+    }
+
+    // The paired soundtrack of a high size has a clock of its own, so it is posed
+    // the moment it knows its duration and unmuted only once it is on the
+    // picture's second - never the other way round.
+    var aux = scVideoEl('scVideoAuxEl');
+    if(aux){
+      aux.addEventListener('loadedmetadata', function(){ scVideoPoseTry(aux); });
+      aux.addEventListener('canplay', function(){
+        scVideoPoseTry(aux);
+        if(scVideoState.audioMode !== 'aux') return;
+        var pv = scVideoEl('scVideoEl');
+        if(pv && pv.paused) return;
+        if(scVideoPosed(aux)) scVideoAuxPlay();
+      });
+      aux.addEventListener('error', function(){
+        if(scVideoState.audioMode !== 'aux') return;
+        scVideoAuxFallBack('the phone refused to open it');
+      });
     }
   }
 
@@ -20283,18 +20346,149 @@ function startLyricsAutoScroll(keepPos, noReset) {
     b.setAttribute('aria-label', live ? 'Pause' : 'Play');
     b.classList.toggle('paused', !live);
   }
+  function scVideoMMSS(n){
+    n = Math.max(0, Math.floor(Number(n) || 0));
+    return Math.floor(n / 60) + ':' + ('0' + (n % 60)).slice(-2);
+  }
   function scVideoClock(){
     var v = scVideoEl('scVideoEl'), c = scVideoEl('scVideoClock'), f = scVideoEl('scVideoFill');
-    if(!c) return;
-    function mmss(n){
-      n = Math.max(0, Math.floor(Number(n) || 0));
-      return Math.floor(n / 60) + ':' + ('0' + (n % 60)).slice(-2);
-    }
+    var th = scVideoEl('scVideoThumb');
     var at = v ? (Number(v.currentTime) || 0) : 0;
     var dur = (v && isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
-    c.textContent = mmss(at) + ' / ' + (dur ? mmss(dur) : '0:00');
-    if(f) f.style.width = (dur ? Math.min(100, (at / dur) * 100) : 0) + '%';
+    var frac = (scVideoState.scrubbing && scVideoState.scrubFrac != null)
+      ? scVideoState.scrubFrac
+      : (dur ? Math.min(1, Math.max(0, at / dur)) : 0);
+    if(c){
+      var shown = (scVideoState.scrubbing && dur) ? frac * dur : at;
+      c.textContent = scVideoMMSS(shown) + ' / ' + (dur ? scVideoMMSS(dur) : '0:00');
+      c.setAttribute('aria-label', c.textContent);
+    }
+    if(f && !scVideoState.scrubbing) f.style.width = (frac * 100) + '%';
+    if(th && !scVideoState.scrubbing) th.style.left = (frac * 100) + '%';
     scVideoBarState();
+  }
+
+  // ── the second the picture is on --------------------------------------------
+  // Setting `currentTime` on an element with no duration yet is ignored or refused
+  // by most phones, and it is forgotten by `load()`. A target second is therefore
+  // kept ON the element and applied the first time it is ready for it.
+  function scVideoPose(el, at){
+    if(!el) return;
+    el.__scPose = (at == null) ? null : Math.max(0, Number(at) || 0);
+    if(el.__scPose != null) scVideoPoseTry(el);
+  }
+  function scVideoPoseTry(el){
+    if(!el) return true;
+    var t = el.__scPose;
+    if(t == null) return true;
+    if(!(el.readyState >= 1)) return false;
+    try{ el.currentTime = t; }catch(_ePose){ return false; }
+    el.__scPose = null;
+    return true;
+  }
+  function scVideoPosed(el){ return !el || el.__scPose == null; }
+
+  function scVideoSeekTo(sec, fromScrub){
+    var v = scVideoEl('scVideoEl');
+    if(!v || !v.src) return;
+    var dur = (isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+    var at = Math.max(0, Number(sec) || 0);
+    if(dur) at = Math.min(at, Math.max(0, dur - 0.3));
+    try{ v.currentTime = at; }catch(_eS1){}
+    if(scVideoState.audioMode === 'aux'){
+      var s = scVideoEl('scVideoAuxEl');
+      if(s && s.src && s.readyState >= 1){ try{ s.currentTime = at; }catch(_eS2){} }
+      else scVideoPose(s, at);
+    }
+    if(scVideoState.audioMode === 'song'){
+      var a = scVideoAudioEl();
+      try{ if(a && at <= (Number(a.duration) || 1e9)) a.currentTime = at; }catch(_eS3){}
+    }
+    if(!fromScrub) scVideoClock();
+  }
+
+  // The progress line as a handle: press anywhere along the 26px touch area, drag
+  // to any second, and the picture, its soundtrack and the song all follow.
+  function scVideoWireSeek(){
+    var pr = scVideoEl('scVideoProg');
+    if(!pr || pr.__scWired) return;
+    pr.__scWired = true;
+    function frac(ev){
+      var r = null;
+      try{ r = pr.getBoundingClientRect ? pr.getBoundingClientRect() : null; }catch(_eRect){ r = null; }
+      if(!r || !r.width) return null;
+      var x = (ev && ev.clientX != null) ? ev.clientX : (r.left + r.width);
+      return Math.max(0, Math.min(1, (x - r.left) / r.width));
+    }
+    function paint(f){
+      scVideoState.scrubFrac = f;
+      var fill = scVideoEl('scVideoFill'), th = scVideoEl('scVideoThumb');
+      if(fill) fill.style.width = (f * 100) + '%';
+      if(th) th.style.left = (f * 100) + '%';
+      var v = scVideoEl('scVideoEl');
+      var dur = (v && isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+      scVideoClock();
+      if(!dur){ scVideoState.scrubFrac = f; }
+    }
+    function put(ev){
+      var f = frac(ev);
+      if(f == null) return;
+      paint(f);
+      var v = scVideoEl('scVideoEl');
+      var dur = (v && isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+      if(dur) scVideoSeekTo(f * dur, true);
+    }
+    pr.addEventListener('pointerdown', function(ev){
+      try{ if(ev && ev.preventDefault) ev.preventDefault(); }catch(_ePd){}
+      scVideoState.scrubbing = true;
+      pr.classList.add('sc-vseek');
+      scVideoIdleWake();
+      try{ if(pr.setPointerCapture && ev && ev.pointerId != null) pr.setPointerCapture(ev.pointerId); }catch(_eCap){}
+      put(ev);
+    });
+    pr.addEventListener('pointermove', function(ev){ if(scVideoState.scrubbing) put(ev); });
+    function done(ev){
+      if(!scVideoState.scrubbing) return;
+      put(ev);
+      scVideoState.scrubbing = false;
+      scVideoState.scrubFrac = null;
+      pr.classList.remove('sc-vseek');
+      scVideoSync(true);
+      scVideoIdleWake();
+    }
+    pr.addEventListener('pointerup', done);
+    pr.addEventListener('pointercancel', done);
+  }
+
+  // ── the transport steps aside ------------------------------------------------
+  function scVideoIdleStop(){
+    if(scVideoState.idle){ clearTimeout(scVideoState.idle); scVideoState.idle = null; }
+  }
+  function scVideoIdleMark(on){
+    var d = scVideoEl('scVideoBackdrop');
+    if(!d) return;
+    d.classList.toggle('sc-vidle', !!on);
+    scVideoState.idleOn = !!on;
+  }
+  function scVideoIdleArm(){
+    scVideoIdleStop();
+    if(!scVideoState.wide) return;
+    var v = scVideoEl('scVideoEl'), q = scVideoEl('scVideoQ');
+    if(!v || v.paused || scVideoState.blocked || scVideoState.scrubbing) return;
+    if(q && q.classList.contains('on')) return;
+    scVideoState.idle = setTimeout(function(){
+      scVideoState.idle = null;
+      var vv = scVideoEl('scVideoEl'), qq = scVideoEl('scVideoQ');
+      if(!scVideoState.wide || !vv || vv.paused || scVideoState.scrubbing) return;
+      if(qq && qq.classList.contains('on')) return;
+      scVideoIdleMark(true);
+    }, SC_VQ_IDLE_MS);
+  }
+  function scVideoIdleWake(){
+    var was = !!scVideoState.idleOn;
+    scVideoIdleMark(false);
+    scVideoIdleArm();
+    return was;
   }
 
   function scVideoTrack(){
@@ -20463,6 +20657,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoQualityToggle(force){
     var q = scVideoEl('scVideoQ');
     if(!q) return;
+    scVideoIdleWake();
     var on = (typeof force === 'boolean') ? force : !q.classList.contains('on');
     q.classList.toggle('on', !!on);
     var chip = scVideoEl('scVideoChip');
@@ -20509,6 +20704,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoQualityChoose(h){
     scVideoQualityToggle(false);
+    scVideoIdleWake();
     scVideoWantSet(h);
     scVideoState.want = Number(h) || 0;
     var r = scVideoRungFor(scVideoState.rungs, h);
@@ -20521,7 +20717,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoApplyRung(rung, keep){
     var v = scVideoEl('scVideoEl');
     if(!rung) return false;
-    var at = (keep && v && v.src) ? (Number(v.currentTime) || 0) : null;
+    var hadSrc = !!(keep && v && v.src);
+    var at = hadSrc ? (Number(v.currentTime) || 0) : null;
+    var switching = !!(hadSrc && scVideoState.rung && scVideoState.rung.h !== rung.h);
+    // A size change is not a play button: a picture that was paused stays paused.
+    scVideoState.wasPlaying = hadSrc ? !v.paused : true;
     scVideoState.rung = rung;
     scVideoState.pick = { url: rung.url, mime: rung.mime, size: rung.size };
     scVideoState.alts = (rung.alts || []).slice();
@@ -20534,48 +20734,86 @@ function startLyricsAutoScroll(keepPos, noReset) {
       : (rung.audioUrl
         ? 'The picture and the same video soundtrack are two streams, played together.'
         : 'No audio in this stream - the song plays under the picture.'));
-    scVideoAttach(rung.url, 'direct');
+    scVideoAttach(rung.url, 'direct', switching);
+    scVideoTickStart();
     return true;
   }
 
-  function scVideoAttach(src, via){
+  // A SIZE THAT NEVER STARTS IS NOT A BLACK PANEL. Nine seconds after a source is
+  // attached, if nothing has played and no frame has arrived, the same road a
+  // refusal takes is walked instead - another codec, then the best one-stream
+  // size - and the footer says which.
+  function scVideoWatch(){
+    scVideoWatchStop();
+    var token = (scVideoState.watchToken = (scVideoState.watchToken || 0) + 1);
+    scVideoState.watch = setTimeout(function(){
+      scVideoState.watch = null;
+      if(token !== scVideoState.watchToken) return;
+      var v = scVideoEl('scVideoEl');
+      if(!v || !v.src || v.paused || scVideoState.blocked) return;
+      if(v.readyState >= 2 || (Number(v.currentTime) || 0) > 0.4) return;
+      scVideoFailed();
+    }, 9000);
+  }
+  function scVideoWatchStop(){
+    if(scVideoState.watch){ clearTimeout(scVideoState.watch); scVideoState.watch = null; }
+    scVideoState.watchToken = (scVideoState.watchToken || 0) + 1;
+  }
+
+  function scVideoAttach(src, via, switching){
     var v = scVideoEl('scVideoEl');
     if(!v || !src) return;
     var mode = scVideoState.audioMode;
     scVideoState.via = via;
     scVideoState.blocked = false;
     scVideoState.audio = scVideoAudioEl();
+    scVideoState.swapAt = (Date.now ? Date.now() : new Date().getTime());
     var start = scVideoState.resumeAt;
     if(start == null) start = (mode === 'song') ? null : scVideoSongTime();
     scVideoState.startAt = start;
     scVideoState.resumeAt = null;
     scVideoAuxPause();
-    try{ v.removeAttribute('src'); }catch(_eRm){}
+    // The source is replaced rather than cleared first: a cleared element is a
+    // black frame where the picture was, and a size change should not blink.
     v.src = src;
     v.muted = (mode !== 'video');          // a paired track is the sound in aux mode
     try{ v.volume = 1; }catch(_eVol){}
+    scVideoPose(v, start);
     if(mode === 'video' || mode === 'aux') scVideoHoldSong();
     if(mode === 'aux') scVideoAuxSet(start);
+    if(mode === 'song'){
+      var s = scVideoAudioEl();
+      try{ if(s && start != null) s.currentTime = Number(start) || 0; }catch(_eSS){}
+      if(scVideoState.wasPlaying) scVideoSong(true);
+    }
     try{ v.load(); }catch(_eLoad){}
+    scVideoPose(v, start);
     scVideoBig(false);
-    scVideoSpin(true);
-    scVideoSay('Starting the video…');
-    scVideoPlayAttempt();
+    scVideoSpin(!!scVideoState.wasPlaying);
+    scVideoSay(switching && scVideoState.rung
+      ? 'Changing to ' + scVideoState.rung.label + '…'
+      : 'Starting the video…');
+    scVideoWatch();
+    if(scVideoState.wasPlaying){ scVideoPlayAttempt(); }
+    else { scVideoSpin(false); scVideoBig(true); scVideoBarState(); scVideoClock(); }
   }
 
   // The soundtrack of a high rung: the same video's own audio row, in its own
-  // element, muted into the picture's clock rather than the song's.
+  // element, posed onto the picture's second rather than onto the song's.
   function scVideoAuxSet(at){
     var a = scVideoEl('scVideoAuxEl');
     var r = scVideoState.rung;
     if(!a) return;
-    try{ a.pause(); }catch(_eAp){}
-    try{ a.removeAttribute('src'); }catch(_eAr){}
-    try{ a.muted = false; a.volume = 1; }catch(_eAv){}
+    scVideoAuxPause();
+    // Silent until it is on the picture's second, so a size change cannot play a
+    // quarter second of the intro over a picture that is two minutes in.
+    try{ a.muted = true; a.volume = 1; }catch(_eAv){}
+    scVideoState.posing = false;
     if(!r || !r.audioUrl) return;
     try{ a.src = r.audioUrl; }catch(_eSrc){ return; }
-    try{ if(at != null) a.currentTime = Number(at) || 0; }catch(_eAt){}
     try{ a.load(); }catch(_eAl){}
+    scVideoPose(a, at);                    // applied when this element has a duration
+    scVideoState.posing = true;
   }
   function scVideoAuxPause(){
     var a = scVideoEl('scVideoAuxEl');
@@ -20584,18 +20822,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoAuxPlay(){
     var a = scVideoEl('scVideoAuxEl'), v = scVideoEl('scVideoEl');
     if(!a || !a.src) return;
-    try{
-      if(v && Math.abs((Number(a.currentTime) || 0) - (Number(v.currentTime) || 0)) > 0.25){
-        a.currentTime = Number(v.currentTime) || 0;
-      }
-    }catch(_eAse){}
+    if(!scVideoPoseTry(a)){ scVideoState.posing = true; return; }   // canplay comes back here
+    var vt = v ? (Number(v.currentTime) || 0) : 0;
+    if(Math.abs((Number(a.currentTime) || 0) - vt) > 0.4){
+      try{ a.currentTime = vt; }catch(_eAse){}
+    }
+    try{ a.muted = false; }catch(_eAum){}
+    scVideoState.posing = false;
     var p = null;
     try{ p = a.play(); }catch(_eApl){ p = null; }
-    if(p && p.catch) p.catch(function(){ scVideoAuxFallBack(); });
+    if(p && p.catch) p.catch(function(e){ scVideoAuxFallBack((e && e.name) || 'refused'); });
   }
-  function scVideoAuxFallBack(){
+  function scVideoAuxFallBack(why){
     if(scVideoState.audioMode !== 'aux') return;
     scVideoState.audioMode = 'song';
+    scVideoState.posing = false;
+    scVideoAuxPause();
     var v = scVideoEl('scVideoEl'), a = scVideoAudioEl();
     try{
       if(a){
@@ -20604,7 +20846,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
     }catch(_eAf){}
     try{ if(v) v.muted = true; }catch(_eAm){}
-    scVideoFoot('This stream refused its own soundtrack - the song plays under the picture.');
+    scVideoFoot('The soundtrack of this size would not play (' + why + ') - the song runs under the picture.');
+    scVideoTickStart();
   }
 
   function scVideoPlayAttempt(){
@@ -20664,12 +20907,21 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoSync(force){
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src) return;
-    // A paired track is the clock: the picture is nudged onto it, not the song.
+    if(scVideoState.scrubbing){ scVideoClock(); return; }
+    // THE PICTURE IS THE CLOCK when a paired track carries the sound. The
+    // soundtrack is nudged onto the picture, never the other way round: a seek
+    // backwards in the picture is the one you can see, and it is what used to
+    // send the film - and the song after it - back to the start.
     if(scVideoState.audioMode === 'aux'){
       var s = scVideoEl('scVideoAuxEl');
-      if(s && s.src && !v.paused && s.readyState >= 1){
-        var d = (Number(s.currentTime) || 0) - (Number(v.currentTime) || 0);
-        if(Math.abs(d) > 0.35){ try{ v.currentTime = Number(s.currentTime) || 0; }catch(_eSync){ } }
+      if(s && s.src && s.readyState >= 1 && scVideoPosed(s)){
+        if(v.paused){
+          if(!s.paused) scVideoAuxPause();
+        } else {
+          var d = (Number(s.currentTime) || 0) - (Number(v.currentTime) || 0);
+          if(Math.abs(d) > 0.45){ try{ s.currentTime = Number(v.currentTime) || 0; }catch(_eSync){ } }
+          if(s.paused && !scVideoState.posing) scVideoAuxPlay();
+        }
       }
       scVideoClock();
       return;
@@ -20690,10 +20942,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoTickStart(){
     scVideoTickStop();
+    if(!scVideoState.open) return;
     scVideoState.tick = setInterval(function(){
       if(!scVideoState.open) return;
       scVideoSync(false);
-    }, scVideoState.audioMode === 'aux' ? 600 : 900);
+    }, scVideoState.audioMode === 'aux' ? 500 : 900);
   }
   function scVideoTickStop(){
     if(scVideoState.tick){ clearInterval(scVideoState.tick); scVideoState.tick = null; }
@@ -20702,6 +20955,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoFailed(){
     var v = scVideoEl('scVideoEl');
     var why = 'the element could not play this source';
+    scVideoWatchStop();
     try{
       var err = v && v.error;
       if(err && err.code === 2) why = 'the stream dropped (network)';
@@ -20709,6 +20963,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       else if(err && err.code === 4) why = 'this source is not a video the element can open';
       else if(err && err.code === 1) why = 'the read was aborted';
     }catch(_eErr){}
+    // An aborted read is the element letting go of the last source, which is what
+    // a size change does; it is not the new size failing.
+    var fresh = 0;
+    try{ fresh = (Date.now ? Date.now() : new Date().getTime()) - (Number(scVideoState.swapAt) || 0); }catch(_eNow){}
+    if(fresh < 900 && why === 'the read was aborted') return;
     // Another codec at the same height, first: the size the owner asked for is
     // worth one more stream before it is given up on.
     var alts = scVideoState.alts || [];
@@ -20718,10 +20977,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoAttach(next.url, 'direct');
       return;
     }
-    // Then the honest fallback: the best size that carries its own sound.
+    // Then the honest fallback: the best size that carries its own sound. The
+    // size the owner chose is kept for the next video - it is this phone that
+    // could not open it, not a choice that was wrong.
     var def = scVideoDefault(scVideoState.rungs);
     if(def && scVideoState.rung && def.h !== scVideoState.rung.h){
-      scVideoState.want = 0;
       scVideoApplyRung(def, true);
       // On the footer, not the transient line: a playing picture clears that one
       // the moment it starts, and this fallback is the thing worth knowing.
@@ -20871,6 +21131,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.wide = !!on;
     d.classList.toggle('sc-vwide', !!on);
     scVideoLandMark(on);
+    if(on){ scVideoIdleMark(false); scVideoIdleArm(); }
+    else { scVideoIdleStop(); scVideoIdleMark(false); }
     if(on){
       try{
         var p = d.requestFullscreen ? d.requestFullscreen() : null;
@@ -20900,6 +21162,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoClose(){
     scVideoState.open = false;
     scVideoTickStop();
+    scVideoWatchStop();
+    scVideoIdleStop();
+    scVideoIdleMark(false);
+    scVideoState.scrubbing = false;
+    scVideoState.scrubFrac = null;
+    scVideoState.posing = false;
+    scVideoState.wasPlaying = true;
     scVideoWide(false);
     scVideoQualityToggle(false);
     var d = scVideoEl('scVideoBackdrop');
@@ -22163,7 +22432,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.1.3';
+  const APP_VERSION = '85.2.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -22873,6 +23142,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.0', date: 'November 18, 2026', title: 'The same second at every size, and a transport that steps aside', items: [
+    '[FULL] Changing size keeps the second you were on. The picture and the soundtrack of a high size were both being attached at zero, and the soundtrack was asked to start there before it had a duration, which a phone ignores - so a switch could send the film, and the song after it, back to the start. Both now hold the second they were on, the soundtrack is pulled onto the picture rather than the picture onto the soundtrack, and a change made while paused stays paused.',
+    '[FULL] The transport steps aside in landscape: two seconds after the last touch the play row, the progress line, the size chip and the close button fade off the glass, with the shadow under them, and a tap on the picture brings them back without stopping the film.',
+    '[FULL] The progress line is a handle now: a wider touch area, a dot that follows the finger, and a drag to any second that moves the picture, its soundtrack and the song underneath together.',
+    '[FULL] A size that never starts is no longer a black panel. If nothing has played nine seconds after a size is attached, the tab tries the next codec, then the best size that carries its own sound, and the footer says what happened. A size this phone cannot open also no longer forgets the size you chose.'
+  ] },
       { version: '85.1.3', date: 'November 18, 2026', title: 'The size chip fits, and the wide header sits right', items: [
     '[FULL] The size chip in the video header keeps its own shape now. The header rule that sizes the round close button was sizing the chip too, so a label like 1080p spilled out of its pill and into the close button; the chip fits its label, and its chevron turns over while the list is open.',
     '[FULL] The landscape header keeps the size chip and the close button at the top right of the wide picture, where they were meant to be, instead of sliding to the left when the title hides.',
