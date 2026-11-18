@@ -1,51 +1,47 @@
-## 85.0.0 ({{STAMP}}): a music video tab on the side rail
+## 85.1.0 ({{STAMP}}): the music video plays, with its own play and pause
 
-**The side rail has a fourth glyph, and it plays the song's music video.** The
-rail is the fixed column of glyphs on the right of the library - Songs, Playlists,
-Albums, then the source switch - and the video tab sits under the three pages and
-above the switch. It is on the full build only: the Play build has no source and no
-video path, so it is not drawn there at all rather than opening onto nothing.
+**85.0.0's tab opened on a black frame, and the code says exactly why.** Three
+faults, and the first one was fatal on a phone. `play()` was issued *after* the
+resolver's network round trip - by then the WebView no longer had a fresh gesture
+from the tap, so it refused with `NotAllowedError`, and the rejection was caught
+and dropped. The element was also hidden behind the status text until
+`loadeddata` fired, so a refused source was a black panel with nothing written on
+it. And a refused direct URL fell straight to `scFetchBytes`, the reader that
+cannot open googlevideo from a browser (no `Access-Control-Allow-Origin`), so the
+alternates the player had already handed over were never tried.
 
-**A song from the source and a file on the device both work.** A catalogue song
-already knows which video it is, so its own clip is what plays. A file has no video
-id, so the host is searched for "artist title" through the ranking the converter
-already trusts, and NEXT walks the next few results - a search for a common title
-lands on the wrong upload often enough that one result was not an answer.
+**The picture is up from the moment it has a source.** `scVideoAttach` sets the
+element, calls `load()`, and leaves the frame visible while it starts. A refused
+`play()` is not swallowed any more: the frame stays, the reason is printed, and a
+round button appears in the middle of it.
 
-**The video is picture, not a second player.** It plays muted on the song's own
-clock, follows play and pause, and re-seats itself when it drifts more than a second
-and a half. That is the whole reason it is muted: the sound you hear is the song this
-app is already playing, through this app's own graph, so the two can never double up.
-The element is pointed at the progressive 360p muxed MP4 the player hands over, and
-when the media stack refuses that URL the same picture is read with `scFetchBytes` -
-the reader the downloader and the stream already use - and played from a blob.
+**The controls are SideCut's own, drawn on the picture.** The browser's gray
+strip is not used. Inside the stage sits one pill: a round **play / pause**
+button whose icon swaps with the frame (a triangle when stopped, two bars while
+it runs), a progress line that fills as the video plays, the clock beside it, and
+`NEXT` and `FULL` at the end. The same round button is the way back in when the
+phone refused autoplay - a tap is the gesture the WebView wanted, so it starts
+the song and the picture together and the animation runs with sound. Tapping the
+picture itself does the same thing.
 
-**Both orientations, with nothing to listen for.** The viewer is a fixed full-screen
-layer: a header, a grid cell that cannot overflow, and one footer line. The picture
-is contained in that cell, so a portrait phone letterboxes a 16:9 video and a
-landscape phone fills the height; a rotation reflows it because nothing in it is
-measured in pixels. FULL asks the element for real fullscreen and, where the phone
-allows it, landscape.
+**It is still picture, not a second player.** The video stays muted and rides the
+song's clock; the transport drives the *song*, so play and pause always come out
+of the app's own audio graph, and a drift of more than a second and a half seats
+the picture back on the song. That is why a tap on PAUSE stops the music you can
+hear and the picture you can see at the same moment.
 
-**The measured half.** The player call was run against this exact request shape
-before the tab was written: the ANDROID client answered `OK` with one progressive row
-- itag 18, `video/mp4; codecs="avc1.42001E"`, 360p - and googlevideo served it in
-1 MiB ranges (`206`, `Content-Range: bytes 0-1023/11829048`), which is the shape
-`scFetchBytes` expects. The same response also carried 360p-2160p adaptive video
-rows, so a refused progressive row has a picture behind it.
+**Every failing step now says so on the screen.** The lookup, the direct stream,
+each alternate (three are tried before the reader), the reader, and the
+decoder's own `MediaError` code all print a line: `the stream dropped (network)`,
+`the phone could not decode this stream`, `this source is not a video the element
+can open`. A tab that does nothing is no longer indistinguishable from a tab that
+was never opened.
 
-**What this does not do.** It does not download or keep the video, and it does not
-try to sync past a music video whose intro is longer than the song's: the picture
-follows the song's second, so an upload with a spoken intro will sit out of step.
-That is a property of matching a film to a track, not something to paper over.
-
-`dev/patch-8500.py` is the payload: the version line, one new notes entry, the
-`video` glyph in the icon map, the rail glyph and its click branch, and the module
-(`dev/video-8500.js`) inserted into the same script block as the shelf code so it can
-reach the app's own resolver, reader and players. Its anchors are the version line,
-the 84.1.3 notes entry, the icon map's `device` glyph, the source switch in
-`scShelfRender`, the rail's click wiring and the shelf page comment, each matched
-exactly once.
+`dev/patch-8510.py` is the payload. It slices 85.0.0's module out - from its
+banner comment to the shelf comment that follows it, not by line count - and
+inserts `dev/video-8510.js` in its place, then moves the version line, the cache
+name, one new notes entry and `updates.json` to 85.1.0. The rail glyph and its
+click branch were 85.0.0's and are untouched.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only: no native change, so the APK is not rebuilt.
