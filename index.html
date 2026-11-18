@@ -17816,6 +17816,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     a.addEventListener('loadedmetadata', function(){ scStreamState.ready = true; scStreamTick(); });
     a.addEventListener('canplay', function(){ scStreamTick(); });
     a.addEventListener('play', function(){
+      // 85.2.1 - NOT UNDER A FILM. The music video tab carries its own sound, and
+      // this element is only held for the song it hands back when the tab closes.
+      if(window.__scVideoSoundOwn){ try{ a.pause(); }catch(_eVidP){} return; }
       scStreamState.playing = true;
       scStreamQuietDeck(); scStreamBarSync(); scStreamPhoneState();
       // 80.9 - SOUND IS THE ONE THING THE PHONE MUST NOT PUT DOWN. A song that is
@@ -19873,7 +19876,35 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.2.0 - THE SAME SECOND AT EVERY SIZE, AND A TRANSPORT THAT STEPS ASIDE ─
+  // ─── 85.2.1 - ONE SOUND, AND THE FRAME IS THE CLOCK ─────────────────────────
+  // WHAT 85.2.0 LEFT WRONG. A high size is the video's picture plus the same
+  // video's own soundtrack in a second element, and that element was allowed to
+  // start the moment it was ready - which is usually before the first frame. The
+  // head start it took, it kept: a few tenths of a second of sound over a picture
+  // that never caught up, because 85.2.0 only pulled it back when it was more than
+  // half a second out. Two clocks running a fraction of a percent apart do the
+  // rest. What you heard was the video's sound, and it was late or early, and it
+  // stayed that way.
+  //
+  // ONE SOUND, AND IT IS THE PICTURE'S. Three things can be heard here - the
+  // picture, its paired soundtrack, and the song - and exactly one of them is
+  // audible at a time. The tab says which one owns the sound in a flag the rest of
+  // the app can read, because the song was being restarted underneath the film by
+  // the app's own background recovery: the thirty-second heartbeat brings a paused
+  // song back, and so does a return from the background, and neither knew the
+  // video was playing. A song that starts under the film is stopped again.
+  //
+  // THE FRAME IS THE CLOCK, AND THE VOICE FOLLOWS IT. The soundtrack waits for the
+  // picture to be playing, starts on the picture's second, is held to a tenth of a
+  // second by trimming its rate rather than jumping it back, and is jumped only on
+  // a real gap - a buffer, a seek, a size change. A picture that pauses or stops
+  // to think takes its voice with it, so the sound cannot run on ahead of a still
+  // frame. Native seeks, the progress line and a size change all move both.
+  //
+  // WHAT 85.2.0 SHIPPED IS UNTOUCHED OTHERWISE: a size change holds its second,
+  // the picture is the clock in every size, a refused size falls back with a line
+  // saying which, the landscape transport steps aside after two seconds, and the
+  // progress line is a handle.
   // WHAT 85.1.2 COULD NOT DO. A size change attached both the picture and the
   // paired soundtrack at zero, and it asked the soundtrack to start there before
   // that element had a duration - which a phone ignores. So the soundtrack began
@@ -19907,7 +19938,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // stage rather than the browser's own player.
   //
   // NOT CLAIMED: 4K is whatever the video gives and the phone decodes. Nothing is
-  // downloaded, nothing is kept, and no size above 64 MB is read into memory.
+  // downloaded, nothing is kept, and no size above 64 MB is read into memory. A
+  // paired soundtrack is still two elements, so this is a lock, not a mux.
 
   var scVideoState = {
     open: false, busy: false, tick: null, cands: [], ci: 0,
@@ -19915,7 +19947,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     blobUrl: '', via: '', audio: null, blocked: false, last: null,
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
-    wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0,
+    wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null
   };
 
@@ -20287,12 +20319,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(scVideoState.audioMode === 'aux') scVideoAuxPlay();
         scVideoIdleArm();
       });
+      // A PAUSED PICTURE IS A SILENT ONE. The soundtrack is its voice, so it stops
+      // with the frame instead of running on over a still.
       v.addEventListener('pause', function(){
         scVideoBarState(); scVideoIdleWake();
+        scVideoAuxPause();
         if(!v.ended && !scVideoState.blocked) scVideoBig(true);
       });
-      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); });
-      v.addEventListener('stalled', function(){ scVideoSpin(true); });
+      // A PICTURE THAT IS THINKING IS SILENT TOO. The voice used to keep running
+      // while the frame waited for bytes, so it pulled ahead and then had to be
+      // dragged back - a stutter you could hear.
+      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoAuxPause(); });
+      v.addEventListener('stalled', function(){ scVideoSpin(true); scVideoAuxPause(); });
+      // Any seek puts the voice on the frame's new second, however it was made.
+      v.addEventListener('seeked', function(){ if(scVideoState.audioMode === 'aux') scVideoAuxAlign(); });
       v.addEventListener('canplay', function(){ scVideoSpin(false); scVideoWatchStop(); });
       v.addEventListener('timeupdate', scVideoClock);
       v.addEventListener('loadedmetadata', function(){
@@ -20302,7 +20342,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoPoseTry(v);
         scVideoClock();
       });
-      v.addEventListener('ended', function(){ scVideoBig(true); scVideoBarState(); scVideoIdleWake(); });
+      v.addEventListener('ended', function(){ scVideoAuxPause(); scVideoBig(true); scVideoBarState(); scVideoIdleWake(); });
       v.addEventListener('error', scVideoFailed);
     }
 
@@ -20315,8 +20355,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       aux.addEventListener('canplay', function(){
         scVideoPoseTry(aux);
         if(scVideoState.audioMode !== 'aux') return;
+        // THE PICTURE GOES FIRST. This used to start the soundtrack the moment it
+        // was ready, which is usually before the first frame - and whatever head
+        // start that took, it kept for the rest of the song.
         var pv = scVideoEl('scVideoEl');
-        if(pv && pv.paused) return;
+        if(!pv || pv.paused || pv.readyState < 2) return;
         if(scVideoPosed(aux)) scVideoAuxPlay();
       });
       aux.addEventListener('error', function(){
@@ -20388,6 +20431,34 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoPosed(el){ return !el || el.__scPose == null; }
 
+  // ── one sound, and every other one is silent --------------------------------
+  // Three things can be heard in this tab: the picture (a size carrying its own
+  // sound), its paired soundtrack (a high size), and the song (a size with no
+  // audio row at all). Exactly one of them is audible, and the app is told which
+  // so its own recovery paths cannot start a song under the film.
+  function scVideoOwnSound(on){
+    scVideoState.owns = !!on;
+    try{ window.__scVideoSoundOwn = !!on; }catch(_eOwn){}
+  }
+  function scVideoMuteOthers(){
+    var v = scVideoEl('scVideoEl'), a = scVideoEl('scVideoAuxEl');
+    var mode = scVideoState.audioMode;
+    if(v && mode !== 'video' && !v.muted){ try{ v.muted = true; }catch(_eMo1){} }
+    if(a && mode !== 'aux' && !a.muted){ try{ a.muted = true; }catch(_eMo2){} }
+  }
+  // Puts the voice on the frame's second when the frame moves for a reason this
+  // module did not perform itself - a native seek, a size change, a dropped buffer.
+  function scVideoAuxAlign(){
+    var a = scVideoEl('scVideoAuxEl'), v = scVideoEl('scVideoEl');
+    if(!a || !a.src || !v || a.readyState < 1) return false;
+    var vt = Number(v.currentTime) || 0;
+    if(Math.abs((Number(a.currentTime) || 0) - vt) > 0.05){
+      try{ a.currentTime = vt; }catch(_eAlign){ return false; }
+    }
+    try{ if(a.playbackRate !== 1) a.playbackRate = 1; }catch(_eRate){}
+    return true;
+  }
+
   function scVideoSeekTo(sec, fromScrub){
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src) return;
@@ -20397,7 +20468,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ v.currentTime = at; }catch(_eS1){}
     if(scVideoState.audioMode === 'aux'){
       var s = scVideoEl('scVideoAuxEl');
-      if(s && s.src && s.readyState >= 1){ try{ s.currentTime = at; }catch(_eS2){} }
+      if(!s || !s.src){}
+      else if(s.readyState >= 1){ try{ s.currentTime = at; }catch(_eS2){} try{ s.playbackRate = 1; }catch(_eSr){} }
       else scVideoPose(s, at);
     }
     if(scVideoState.audioMode === 'song'){
@@ -20773,11 +20845,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.startAt = start;
     scVideoState.resumeAt = null;
     scVideoAuxPause();
+    // WHO OWNS THE SOUND. A size with its own audio owns it - in the picture or in
+    // its paired track - and the rest of the app is told, so the song cannot be
+    // started underneath the film by the app's own background recovery. A size
+    // with no audio gives it back, because there the song IS the soundtrack.
+    scVideoOwnSound(mode !== 'song');
     // The source is replaced rather than cleared first: a cleared element is a
     // black frame where the picture was, and a size change should not blink.
     v.src = src;
     v.muted = (mode !== 'video');          // a paired track is the sound in aux mode
     try{ v.volume = 1; }catch(_eVol){}
+    scVideoMuteOthers();
     scVideoPose(v, start);
     if(mode === 'video' || mode === 'aux') scVideoHoldSong();
     if(mode === 'aux') scVideoAuxSet(start);
@@ -20814,6 +20892,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ a.load(); }catch(_eAl){}
     scVideoPose(a, at);                    // applied when this element has a duration
     scVideoState.posing = true;
+    scVideoMuteOthers();
   }
   function scVideoAuxPause(){
     var a = scVideoEl('scVideoAuxEl');
@@ -20822,12 +20901,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoAuxPlay(){
     var a = scVideoEl('scVideoAuxEl'), v = scVideoEl('scVideoEl');
     if(!a || !a.src) return;
+    if(scVideoState.audioMode !== 'aux'){ try{ a.muted = true; }catch(_eAuxQ){} return; }
+    // THE FRAME IS THE CLOCK. There is nothing to line a voice up with until the
+    // picture is running, and starting early is exactly what put it ahead.
+    if(!v || v.paused || v.readyState < 2) return;
     if(!scVideoPoseTry(a)){ scVideoState.posing = true; return; }   // canplay comes back here
-    var vt = v ? (Number(v.currentTime) || 0) : 0;
-    if(Math.abs((Number(a.currentTime) || 0) - vt) > 0.4){
+    var vt = Number(v.currentTime) || 0;
+    if(Math.abs((Number(a.currentTime) || 0) - vt) > 0.05){
       try{ a.currentTime = vt; }catch(_eAse){}
     }
+    try{ if(a.playbackRate !== 1) a.playbackRate = 1; }catch(_eApr){}
     try{ a.muted = false; }catch(_eAum){}
+    scVideoMuteOthers();
     scVideoState.posing = false;
     var p = null;
     try{ p = a.play(); }catch(_eApl){ p = null; }
@@ -20837,6 +20922,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(scVideoState.audioMode !== 'aux') return;
     scVideoState.audioMode = 'song';
     scVideoState.posing = false;
+    scVideoOwnSound(false);
     scVideoAuxPause();
     var v = scVideoEl('scVideoEl'), a = scVideoAudioEl();
     try{
@@ -20914,12 +21000,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // send the film - and the song after it - back to the start.
     if(scVideoState.audioMode === 'aux'){
       var s = scVideoEl('scVideoAuxEl');
+      scVideoMuteOthers();
       if(s && s.src && s.readyState >= 1 && scVideoPosed(s)){
-        if(v.paused){
+        var vt2 = Number(v.currentTime) || 0;
+        if(v.paused || v.readyState < 2){
           if(!s.paused) scVideoAuxPause();
         } else {
-          var d = (Number(s.currentTime) || 0) - (Number(v.currentTime) || 0);
-          if(Math.abs(d) > 0.45){ try{ s.currentTime = Number(v.currentTime) || 0; }catch(_eSync){ } }
+          var d = (Number(s.currentTime) || 0) - vt2;
+          // A TENTH, AND IT IS TRIMMED, NOT JUMPED. Two elements run at very
+          // slightly different rates, so the voice is allowed to run a hair fast or
+          // slow until it sits on the frame. Only a real gap - a buffered picture,
+          // a seek, a size change - is jumped.
+          if(Math.abs(d) > 0.6){
+            try{ s.currentTime = vt2; }catch(_eSync){ }
+            try{ s.playbackRate = 1; }catch(_eSyncR){ }
+          } else if(Math.abs(d) > 0.1){
+            try{ s.playbackRate = Math.max(0.92, Math.min(1.08, 1 - d * 0.5)); }catch(_eSyncT){ }
+          } else {
+            try{ if(s.playbackRate !== 1) s.playbackRate = 1; }catch(_eSyncU){ }
+          }
           if(s.paused && !scVideoState.posing) scVideoAuxPlay();
         }
       }
@@ -21041,6 +21140,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var v = scVideoEl('scVideoEl');
     if(v){ try{ v.pause(); }catch(_eP){} try{ v.removeAttribute('src'); v.load(); }catch(_eC){} }
     scVideoAuxPause();
+    scVideoOwnSound(false);          // looking for a video: the song is the sound
     scVideoTickStop();
     scVideoQualityToggle(false);
     scVideoTitle(cand.title || 'Music video', cand.owner || '');
@@ -21182,7 +21282,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoAuxPause();
     var a = scVideoEl('scVideoAuxEl');
     if(a){ try{ a.removeAttribute('src'); a.load(); }catch(_eAuxClr){} }
-    // The song picks up where the video stopped, so the tab is a detour.
+    // The song picks up where the video stopped, so the tab is a detour - and it
+    // may start freely now, because nothing here owns the sound any more.
+    scVideoOwnSound(false);
     scVideoReleaseSong();
     try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev2){}
     scVideoState.blobUrl = '';
@@ -22432,7 +22534,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.0';
+  const APP_VERSION = '85.2.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23142,6 +23244,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.1', date: 'November 18, 2026', title: 'One sound, and the frame is the clock', items: [
+    '[FULL] The picture and its sound are locked together. A high size is the picture plus the video own soundtrack in a second element, and that element could start before the first frame and keep the head start - it was only pulled back when it was more than half a second out. It now waits for the picture to be playing, starts on the picture second, and is held to about a tenth of a second by trimming its rate instead of jumping it back.',
+    '[FULL] One sound at a time. A song paused by the video tab could be started again by the recovery the app runs in the background - every thirty seconds, and on the way back from the background - so the song played underneath the film. The tab now marks itself as the owner of the sound, and anything the app tries to start under it is stopped again.',
+    '[FULL] A picture that pauses or stops to buffer takes its soundtrack with it, so the sound cannot run on over a still frame, and a seek moves both together.'
+  ] },
       { version: '85.2.0', date: 'November 18, 2026', title: 'The same second at every size, and a transport that steps aside', items: [
     '[FULL] Changing size keeps the second you were on. The picture and the soundtrack of a high size were both being attached at zero, and the soundtrack was asked to start there before it had a duration, which a phone ignores - so a switch could send the film, and the song after it, back to the start. Both now hold the second they were on, the soundtrack is pulled onto the picture rather than the picture onto the soundtrack, and a change made while paused stays paused.',
     '[FULL] The transport steps aside in landscape: two seconds after the last touch the play row, the progress line, the size chip and the close button fade off the glass, with the shadow under them, and a tap on the picture brings them back without stopping the film.',
@@ -29020,6 +29127,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   [audio, audio2].forEach(function(el){
     if(!el) return;
     el.addEventListener('play', function(){
+      // 85.2.1 - THE VIDEO TAB OWNS THE SOUND. A song started under it - by a
+      // crossfade, a recovery, or the tab opening - is stopped again, the same
+      // way a deck is stopped under a stream.
+      try{ if(window.__scVideoSoundOwn){ el.pause(); return; } }catch(_eVidOwn){}
       try{ if(typeof scStreamDeckGuard === 'function' && scStreamDeckGuard()) el.pause(); }catch(_eSg){}
     });
   });
@@ -42583,7 +42694,9 @@ function _fallbackCopy(text){
       // alone, and the attempts are counted so a dead source is not hammered.
       if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
         const sa = scStreamState.audio;
-        if(sa && sa.paused && !scStreamState.userPaused && !audioFocusInterrupted && !scInCall()){
+        // 85.2.1 - unless the music video tab is playing: this thirty-second revive
+        // is what used to start the song again over a film that was already sounding.
+        if(sa && sa.paused && !window.__scVideoSoundOwn && !scStreamState.userPaused && !audioFocusInterrupted && !scInCall()){
           scStreamState.revives = (Number(scStreamState.revives) || 0) + 1;
           if(scStreamState.revives <= 20){
             Promise.resolve(sa.play()).catch(function(){
@@ -42963,6 +43076,8 @@ function _fallbackCopy(text){
   // Android reclaims memory while backgrounded and the old blob URL goes dead.
   function recoverAudio(a, reason){
     if(a !== activeAudio() || queueIndex < 0 || queueIndex >= queue.length) return;
+    // 85.2.1 - the film is the sound right now, so there is nothing to recover.
+    if(window.__scVideoSoundOwn) return;
     // Don't auto-restart playback if the user deliberately paused
     if(userPaused) return;
     // 80.6.21 - and not behind a stream: the deck is not the sound right now.

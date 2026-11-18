@@ -1,75 +1,75 @@
-## 85.2.0 ({{STAMP}}): the same second at every size, and a transport that steps aside
+## 85.2.1 ({{STAMP}}): one sound, and the frame is the clock
 
-**85.1.2 shipped a size list, and the sizes did not really work.** Two lines were
-the cause, and neither was in the ladder. `scVideoAuxSet` set `currentTime` on the
-soundtrack element *before* `load()`; a media element that does not know its own
-duration yet ignores or refuses that, so the soundtrack of a 1080p picture began
-at 0:00. Then `scVideoSync`, in the mode where that soundtrack carries the sound,
-nudged the **picture** onto the soundtrack's clock. The film jumped to the start
-the moment a high size was picked - and because closing the tab puts the song back
-at the picture's second, the song was put back at the start too. That is a size
-change that looks like a restart.
+**85.2.0 kept the second and lost the sound.** A high size is the picture and the
+video's own soundtrack in two elements, and the soundtrack was started the moment
+it was ready - which on a phone is usually before the first frame. Whatever head
+start it took, it kept: the two clocks then run a fraction of a percent apart, and
+85.2.0 only pulled the voice back when it was more than half a second out. So a
+1080p or 4K picture ran with its own sound a few tenths of a second off, and it
+stayed that way for the whole song. The other half was worse and simpler: the song
+under the film was being **started again** by the app's own recovery. The
+thirty-second media heartbeat revives a paused source, and a return from the
+background revives a paused deck song, and neither of them knew the video tab was
+playing - so the film and the song were both audible, seconds apart.
 
-**The picture is the clock now.** A second the element is not ready for is kept on
-the element and applied the first time it knows its duration, for the picture and
-for its own soundtrack both. The soundtrack is nudged onto the picture, never the
-other way round, because a backwards seek in the picture is the one you can see.
-The soundtrack is also silent until it is on that second, so a switch cannot play
-a quarter second of the intro over a picture two minutes in. A change made while
-the picture is paused leaves it paused, and the swap assigns the source instead of
-clearing the element first, so a size change is not a black frame either.
+**One sound, and it is the picture's.** Exactly one of the picture, its paired
+soundtrack and the song is audible at a time. The tab now publishes which one owns
+the sound (`window.__scVideoSoundOwn`), and the app reads it in the four places
+that can start a song: both elements' own `play` listeners stop themselves, the
+heartbeat does not revive a source under it, and `recoverAudio` returns before it
+restarts a deck song. Closing the tab clears the flag **before** the song is handed
+back, so the resume on close is not mistaken for a song starting under the film. A
+size with no audio row gives the sound to the song, because there the song is the
+soundtrack.
 
-**A size that never starts is not a black panel.** Nine seconds after a source is
-attached, if nothing has played and no frame has arrived, the tab walks the road a
-refusal already took: another codec at that height, then the best size that
-carries its own sound, with the footer saying which. A size this phone cannot open
-no longer forgets the size that was chosen - it is the phone that refused it, not
-a choice that was wrong.
+**The frame is the clock, and the voice follows it.** The soundtrack waits for the
+picture to be playing before it is heard, starts on the picture's second, and is
+then held to a tenth of a second - trimmed by running it a hair fast or slow, not
+jumped, so the lock is inaudible. Only a real gap is a jump: more than 0.6s, which
+is a seek, a size change or a buffered picture. A picture that pauses, stalls or
+ends takes its voice with it, and a `seeked` event - a native seek, not just the
+progress line - puts the voice on the new second. The one-stream sizes are
+untouched: there the picture carries its own sound and nothing else is unmuted.
 
-**The transport steps aside in landscape.** Two seconds after the last touch the
-play row, the progress line, the size chip, the close button and the scrim under
-them fade off the glass together, and a tap on the picture brings them back
-without stopping the film - a tap in landscape is a wake-up first and a play/pause
-second, the way it is everywhere else. A paused or buffering picture keeps its
-controls, and so does an open size list.
+**What 85.2.0 shipped is otherwise as it was.** A size change holds its second at
+every size, a refused size falls back with a line saying which and keeps the size
+that was chosen, the landscape transport steps aside two seconds after the last
+touch, and the progress line is a handle.
 
-**The progress line is a handle.** It has a 26px touch area around the 4px line, a
-dot that follows the finger, and no easing while dragging: press anywhere, drag
-to any second, and the picture, its soundtrack and the song underneath all follow.
-The dot stays where it was dropped.
-
-**What 85.1.2 and 85.1.3 shipped is otherwise untouched.** The ladder is read out
-of the answer, AUTO is still the best one-stream size, the choice is still
-remembered, the landscape button still turns the stage rather than the browser's
-player, and the size chip still fits its label.
-
-`dev/patch-8520.py` replaces the module as one slice (from the 85.1.2 banner to
-the shelf comment that follows it) with `dev/video-8520.js`, then moves the
-version line, the cache name, one new notes entry and `updates.json` to 85.2.0. A
-second run is a no-op.
+`dev/patch-8521.py` replaces the module as one slice (from the 85.2.0 banner to the
+shelf comment that follows it) with `dev/video-8521.js`, adds the four guards in
+`index.html` (the deck's play listener, the stream element's play listener, the
+heartbeat revive, `recoverAudio`), each matched exactly once, then moves the version
+line, the cache name, one new notes entry and `updates.json` to 85.2.1. A second run
+is a no-op.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only: no native change, so the APK is not rebuilt.
 
 ### What was checked, and what was not
 
-Checked: `dev/check-8520.cjs` runs the module that ships against a stubbed DOM and
-passes 72 assertions. The ones this release is about: a 1080p switch made at 0:33
-still has the picture on 0:33 after the load has reset the element; the soundtrack
-is attached muted with no position, sits on 0:33 once its own metadata arrives, and
-is only unmuted when it is there; a soundtrack that drifts to 0:00 while the
-picture is on 0:40 is pulled back to 0:40 and **the picture does not move**; a size
-change made while paused stays paused and holds its second; a refusal falls back to
-720p, still says so on the footer, and keeps 2160p remembered; two seconds of quiet
-in landscape add the idle class and a tap reports it and clears it, while a paused
-picture keeps its controls; a press halfway along the progress line seeks to 105 of
-210 and a drag back to a quarter seeks to 52.5, with the fill at 50% before the
-seek lands. `python3 dev/patch-8520.py --check` exits 1 before and 0 after, a second
-run prints `already on the page`, all 7 inline scripts of the patched page parse,
-and the module on the page is byte-identical to `dev/video-8520.js`.
+Checked: `dev/check-8521.cjs` runs the module that ships against a stubbed DOM and
+passes 93 assertions. The ones this release is about: a soundtrack whose `canplay`
+arrives while the picture is paused is **not** started and stays muted, and the same
+event with the picture running starts it on the picture's second; a drift of 0.2s
+is not seeked but trimmed (`playbackRate` 0.92, position left alone), a drift of
+9s is jumped onto the frame, and the rate returns to 1 once the two are back
+together; a picture `pause`, `waiting` and `seeked` each pause or move the voice;
+a high size leaves the picture muted with only the soundtrack audible, a one-stream
+size unmutes the picture and re-mutes the soundtrack, a size with no audio gives the
+flag back, and closing clears the flag before the song resumes. The 85.2.0
+assertions still pass unchanged - the pose before the load, the picture not being
+moved by the voice, the paused size change, the landscape idle, the drag, the
+refusal falling back to 720p. `python3 dev/patch-8521.py --check` exits 1 before and
+0 after, a second run prints `already on the page`, all 7 inline scripts of the
+patched page parse, the module on the page is byte-identical to
+`dev/video-8521.js`, and the flag is read in all five places that matter. Bundles
+reached their fixed point in three passes and both channels verify with `--check`.
 
-Not checked: no phone, and no browser session drove this screen, so the idle fade,
-the drag feel and the A/V pairing were verified as code and arithmetic only. What
-is proven is the order of the poses and the direction of the nudges; whether a
-particular 4K row decodes on a particular phone, and how the two-second fade feels
-under a thumb, are for the owner.
+Not checked: no phone, and no browser session drove this screen in this session.
+What is proven is the order of the starts, the direction of the corrections and
+that the flag is read where a song can begin - as code and arithmetic, not as
+lip-sync on a device. Whether a particular phone keeps two media elements locked to
+a tenth of a second, and how the rate trim sounds through a real speaker, are for
+the owner. Nothing in the tab muxes: a paired soundtrack is still two elements, so
+this is a lock, not a single stream.
