@@ -19876,6 +19876,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.6 - THE PICTURE IS WHERE THE SONG IS, AND A SONG WITHOUT ONE HAS A COVER ─
+  // FOUR REPORTS, AND NOT ONE OF THEM WAS THE LADDER. The size list offered rows
+  // this phone cannot open, and offered the same row again for the next song after
+  // it had already refused it - so "random qualities that do not work" was true on
+  // both halves. The clip opened at the top of the file rather than at the second
+  // the song is on. And the tab stayed on the song it was opened for: the queue
+  // moved on, the film did not.
+  //
+  // THE LIST ONLY OFFERS WHAT PLAYS. A height this phone has refused is remembered
+  // for the session, marked in the list, and never landed on automatically again; a
+  // height whose only row is a codec the element cannot claim is marked too.
+  // Neither is hidden - a hand may still try it - but the default stops being a
+  // size that does not work, which is the whole complaint. Nothing under 360p is
+  // offered at all unless it is the only thing the video has.
+  //
+  // THE PICTURE SKIPS TO THE SONG. A clip opens on the second the song is on, in
+  // every mode, and the footer says which second that was. A song that moves on
+  // takes the picture with it: the tab follows the queue, opens the new song's own
+  // video on that song's second, and walks its own results for it.
+  //
+  // A SONG WITH NO VIDEO HAS A COVER. Where there is nothing to play - a file the
+  // search cannot match, or a clip the player cannot resolve - the stage shows the
+  // track's own art instead of a black rectangle, the song is the sound, and the
+  // tab keeps following the queue from there.
   // ─── 85.2.5 - THE CLIP HAS TO BE THIS SONG, AND HALF A FILE IS NOT A SOURCE ─
   // TWO REPORTS, ONE ROOT EACH. The tab showed someone else's clip for a song,
   // and it kept landing on 360p. The first was the catalogue: a song that carries
@@ -20018,7 +20042,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
+    deadH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -20148,7 +20173,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
         muxed: !!top.muxed, codec: scVideoCodec(top.mime), alts: alts,
         audioUrl: top.muxed ? '' : (snd ? snd.url : ''),
         audioMime: top.muxed ? '' : (snd ? snd.mime : ''),
-        audioSize: top.muxed ? 0 : (snd ? snd.size : 0)
+        audioSize: top.muxed ? 0 : (snd ? snd.size : 0),
+        // Whether the element claims it can decode the row this height resolved to.
+        // A height whose only row it cannot open is offered as a marked row, never
+        // as the default.
+        no: !scVideoCanPlay(top.mime)
       });
     });
     rungs.sort(function(a, b){ return b.h - a.h; });
@@ -20184,6 +20213,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(!best || r.h > best.h) best = r;
     });
     return best;
+  }
+
+  // A SIZE THIS PHONE REFUSED IS NOT A SIZE TO LAND ON. Remembered by height for
+  // the rest of the session: the list marks it, and the automatic landing - AUTO or
+  // the FULL HD default - walks past it to the sharpest size that actually plays.
+  function scVideoDead(h){ return !!(h && scVideoState.deadH[Number(h)]); }
+  function scVideoLive(rungs){
+    return (rungs || []).filter(function(r){ return r && !scVideoDead(r.h); });
   }
 
   function scVideoPref(val){
@@ -20261,6 +20298,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scVideoSay{position:absolute;left:0;right:0;bottom:0;padding:12px 14px 64px;font-size:11.5px;line-height:1.5;',
       'color:#d9e8e4;background:linear-gradient(0deg, rgba(0,0,0,.82), rgba(0,0,0,0));display:none;text-align:left}',
       '#scVideoSay.on{display:block}',
+      // THE COVER. A song with no music video is not a black rectangle: its own art,
+      // blurred behind itself, and one line saying what it is.
+      '#scVideoCover{position:absolute;inset:0;display:none;place-items:center;overflow:hidden}',
+      '#scVideoCover.on{display:grid}',
+      '#scVideoCover .sv-cbg{position:absolute;inset:-24px;background-position:center;background-size:cover;',
+      'filter:blur(28px) saturate(1.15) brightness(.5);transform:scale(1.12)}',
+      '#scVideoCover .sv-cwrap{position:relative;display:grid;justify-items:center;gap:14px;padding:18px;text-align:center}',
+      '#scVideoCover img{width:min(58%,232px);aspect-ratio:1/1;object-fit:cover;border-radius:16px;display:block;',
+      'border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 44px rgba(0,0,0,.5);background:rgba(255,255,255,.05)}',
+      '#scVideoCover img.none{width:min(46%,176px);opacity:.45}',
+      '#scVideoCover span{font-size:10.5px;line-height:1.5;letter-spacing:.4px;color:#cfe6e1;opacity:.86;max-width:250px}',
+      '#scVideoStage.sc-vcover #scVideoEl,#scVideoStage.sc-vcover #scVideoCtl,',
+      '#scVideoStage.sc-vcover #scVideoSpin,#scVideoStage.sc-vcover #scVideoBig{display:none}',
+      // A size this phone has already refused has to look like it, or it reads as an
+      // offer and the list is a list of sizes that do not work.
+      '.sv-qr.off{opacity:.42}',
+      '.sv-qr.off b{color:var(--ink-dim);font-weight:600}',
       // The quality list. A frosted card that opens above the transport, so the
       // picture is never covered by the thing that describes it.
       '#scVideoQ{position:absolute;right:9px;bottom:66px;z-index:6;width:min(278px, calc(100% - 18px));display:none;',
@@ -20359,6 +20413,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '<div id="scVideoStage">' +
         '<video id="scVideoEl" playsinline webkit-playsinline preload="auto"></video>' +
         '<audio id="scVideoAuxEl" preload="auto"></audio>' +
+        '<div id="scVideoCover" aria-hidden="true">' +
+          '<div class="sv-cbg" id="scVideoCoverBg"></div>' +
+          '<div class="sv-cwrap">' +
+            '<img id="scVideoCoverImg" alt="">' +
+            '<span id="scVideoCoverTxt"></span>' +
+          '</div>' +
+        '</div>' +
         '<div id="scVideoSpin" aria-hidden="true"></div>' +
         '<button type="button" id="scVideoBig" aria-label="Play">' + SC_VICON_BIG + '</button>' +
         '<div id="scVideoSay"></div>' +
@@ -20471,6 +20532,52 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoAuxFallBack('the phone refused to open it');
       });
     }
+  }
+
+  // ── a song with no video has a cover ----------------------------------------
+  // A black stage is the one thing that cannot be told apart from a tab that
+  // failed. Where there is nothing to play, the track's own art is the picture.
+  function scVideoCoverShow(url, line){
+    var st = scVideoEl('scVideoStage'), c = scVideoEl('scVideoCover');
+    var img = scVideoEl('scVideoCoverImg'), bg = scVideoEl('scVideoCoverBg'), txt = scVideoEl('scVideoCoverTxt');
+    var u = String(url || '');
+    scVideoState.coverOn = true;
+    if(st) st.classList.add('sc-vcover');
+    if(c) c.classList.add('on');
+    if(img){
+      if(u){ try{ img.src = u; }catch(_eCi){} img.style.visibility = ''; img.classList.remove('none'); }
+      else { try{ img.removeAttribute('src'); }catch(_eCr){} img.style.visibility = 'hidden'; img.classList.add('none'); }
+    }
+    if(bg) bg.style.backgroundImage = u ? 'url("' + u.replace(/"/g, '%22') + '")' : 'none';
+    if(txt) txt.textContent = String(line || 'No music video for this song.');
+    scVideoBig(false); scVideoSpin(false); scVideoSay('');
+  }
+  function scVideoCoverHide(){
+    if(!scVideoState.coverOn) return;
+    var st = scVideoEl('scVideoStage'), c = scVideoEl('scVideoCover');
+    scVideoState.coverOn = false;
+    if(st) st.classList.remove('sc-vcover');
+    if(c) c.classList.remove('on');
+  }
+  // NOTHING TO PLAY FOR THIS SONG. The cover, the song as the sound, and the tab
+  // still following the queue - so the next song that has a video gets one.
+  function scVideoNoVideo(t, line){
+    scVideoState.rungs = [];
+    scVideoState.rung = null;
+    scVideoState.cands = [];
+    scVideoState.ci = 0;
+    scVideoState.audioMode = 'song';
+    scVideoState.posing = false;
+    scVideoAuxPause();
+    scVideoOwnSound(false);
+    scVideoCoverShow((t && t.art) || '', line || 'No music video for this song.');
+    scVideoTitle((t && t.title) || 'Music video', (t && t.artist) || '');
+    scVideoChip('');
+    scVideoFoot('The song plays on - there is nothing to show for it.');
+    var nx = scVideoEl('scVideoNext'); if(nx) nx.style.display = 'none';
+    scVideoSong(true);
+    scVideoTickStart();
+    return false;
   }
 
   function scVideoSay(txt){ var s = scVideoEl('scVideoSay'); if(!s) return;
@@ -20667,11 +20774,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return was;
   }
 
+  // WHAT IS PLAYING, WITH WHAT IT LOOKS LIKE. `key` is what the tab watches so the
+  // picture can move when the queue does, and `art` is what a song with no video is
+  // shown as instead of a black rectangle.
   function scVideoTrack(){
+    function domArt(){
+      try{ return (typeof nowArtUrl === 'function') ? String(nowArtUrl() || '') : ''; }catch(_eDomArt){ return ''; }
+    }
     try{
       if(typeof scStreamState === 'object' && scStreamState && scStreamState.barOn && scStreamState.curId){
         var st = scStreamById(scStreamState.curId);
-        if(st) return { videoId: String(st.videoId || ''), title: String(st.title || ''), artist: String(st.artist || '') };
+        if(st){
+          var sArt = '';
+          try{ if(typeof scStreamThumb === 'function') sArt = String(scStreamThumb(st) || ''); }catch(_eStArt){ sArt = ''; }
+          return { videoId: String(st.videoId || ''), title: String(st.title || ''), artist: String(st.artist || ''),
+                   art: sArt, key: 's:' + String(st.id || '') };
+        }
       }
     }catch(_eVs){}
     try{
@@ -20679,7 +20797,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         var id = queue[queueIndex];
         for(var i = 0; i < allTracks.length; i++){
           if(allTracks[i] && String(allTracks[i].id) === String(id)){
-            return { videoId: String(allTracks[i].videoId || ''), title: String(allTracks[i].title || ''), artist: String(allTracks[i].artist || '') };
+            var f = allTracks[i];
+            var fArt = String(f.artUrl || f.art || f.cover || f.thumb || '') || domArt();
+            return { videoId: String(f.videoId || ''), title: String(f.title || ''), artist: String(f.artist || ''),
+                     art: fArt, key: 'q:' + String(id) };
           }
         }
       }
@@ -20856,12 +20977,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoQualityRow(rung, auto, cur){
     var h = auto ? 0 : rung.h;
     var title = auto ? 'AUTO' : rung.label;
+    var dead = !auto && scVideoDead(rung.h);
+    var no = !auto && !dead && !!rung.no;
     var sub = auto
       ? 'the best one-stream size for this phone'
       : (rung.h === SC_VQ_DEFAULT ? 'default \u00b7 ' : '') +
         rung.tag + ' \u00b7 ' + rung.codec + ' \u00b7 ' + Math.max(1, Math.round((rung.size || 0) / 1048576)) + ' MB' +
-        (rung.muxed ? ' \u00b7 one stream' : (rung.audioUrl ? ' \u00b7 its own track' : ' \u00b7 song underneath'));
-    return '<button type="button" class="sv-qr' + (cur ? ' cur' : '') + '" data-h="' + h + '"' +
+        (rung.muxed ? ' \u00b7 one stream' : (rung.audioUrl ? ' \u00b7 its own track' : ' \u00b7 song underneath')) +
+        (dead ? ' \u00b7 did not play here' : (no ? ' \u00b7 this phone cannot open it' : ''));
+    return '<button type="button" class="sv-qr' + (cur ? ' cur' : '') + (dead || no ? ' off' : '') + '" data-h="' + h + '"' +
       (cur ? ' aria-current="true"' : '') + '>' +
       '<b>' + title + '</b><i>' + sub + '</i>' + (cur ? SC_VICON_CHECK : '') + '</button>';
   }
@@ -20881,7 +21005,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var cur = scVideoState.rung;
     var auto = !scVideoState.want;
     var html = scVideoQualityRow(null, true, auto && !!cur);
-    rungs.forEach(function(r){
+    // NOTHING UNDER 360p IS AN OFFER. Those rows exist in every answer as the floor
+    // of a bad connection, and listing them beside FULL HD is half of why the list
+    // read as a set of random sizes. They are still landed on as a last resort.
+    var shown = rungs.filter(function(r){ return r.h >= 360; });
+    if(!shown.length) shown = rungs;
+    shown.forEach(function(r){
       html += scVideoQualityRow(r, false, !!cur && cur.h === r.h);
     });
     list.innerHTML = html;
@@ -20920,6 +21049,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoApplyRung(r, true);
   }
 
+  // WHERE THE PICTURE CAME IN. A clip that opens two minutes into a song has to say
+  // so, or a film that started halfway looks like a film that is broken.
+  function scVideoSyncNote(){
+    var at = Number(scVideoState.openedAt) || 0;
+    if(at < 3) return '';
+    return ' \u00b7 Started at ' + scVideoMMSS(at) + ', where the song is.';
+  }
+
   // ── playback ---------------------------------------------------------------
   function scVideoApplyRung(rung, keep){
     var v = scVideoEl('scVideoEl');
@@ -20936,11 +21073,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.audioMode = rung.muxed ? 'video' : (rung.audioUrl ? 'aux' : 'song');
     scVideoState.resumeAt = at;
     scVideoQualityMark();
-    scVideoFoot(rung.muxed
+    scVideoFoot((rung.muxed
       ? 'This stream carries its own sound - the song waits where you left it.'
       : (rung.audioUrl
         ? 'The picture and the same video soundtrack are two streams, played together.'
-        : 'No audio in this stream - the song plays under the picture.'));
+        : 'No audio in this stream - the song plays under the picture.')) + scVideoSyncNote());
     scVideoAttach(rung.url, 'direct', switching);
     scVideoTickStart();
     return true;
@@ -20995,7 +21132,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.audio = scVideoAudioEl();
     scVideoState.swapAt = (Date.now ? Date.now() : new Date().getTime());
     var start = scVideoState.resumeAt;
-    if(start == null) start = (mode === 'song') ? null : scVideoSongTime();
+    // SKIP TO THE SONG, IN EVERY MODE. A clip that opens at 0:00 for a song that is
+    // two minutes in is the one thing this tab cannot do - and in song mode the
+    // picture used to start at the top while the song ran on underneath it.
+    if(start == null) start = scVideoSongTime();
     scVideoState.startAt = start;
     scVideoState.resumeAt = null;
     scVideoAuxPause();
@@ -21147,7 +21287,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }
 
+  // ── the tab follows the song ------------------------------------------------
+  // The picture belongs to the song that is playing, not to the song the tab was
+  // opened for. When the queue moves on, the film moves with it and opens on the
+  // new song's own second.
+  function scVideoFollow(){
+    if(!scVideoState.open || scVideoState.busy || scVideoState.scrubbing) return false;
+    var t = scVideoTrack();
+    var key = String((t && t.key) || '');
+    if(!key) return false;
+    if(!scVideoState.songKey){ scVideoState.songKey = key; return false; }
+    if(key === scVideoState.songKey) return false;
+    scVideoState.songKey = key;
+    // THE NEW SONG WAS BEING HELD. Its own play was stopped while the picture owned
+    // the sound, so ownership is given back before it is asked to run - the tab is
+    // free to take it again if the new clip carries sound.
+    scVideoOwnSound(false);
+    scVideoState.songWasPlaying = false;
+    scVideoSong(true);
+    scVideoStart(t);
+    return true;
+  }
+
   function scVideoSync(force){
+    scVideoFollow();
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src) return;
     if(scVideoState.scrubbing){ scVideoClock(); return; }
@@ -21267,6 +21430,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoAttach(next.url, 'direct');
       return;
     }
+    // THIS HEIGHT IS NOT ONE THIS PHONE CAN OPEN. Every codec at it has now been
+    // tried, so it is remembered by height: the list marks it, and the automatic
+    // landing stops choosing it for the rest of the session. A list that forgets is
+    // how the same dead size is offered again on the next song.
+    if(from && from.h && (code === 3 || code === 4 || dead === true)) scVideoState.deadH[from.h] = 1;
     // Then the honest fallback: the best size that carries its own sound. The
     // size the owner chose is kept for the next video - it is this phone that
     // could not open it, not a choice that was wrong.
@@ -21275,12 +21443,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // with its own sound threw the 720p picture away because 1080p was refused.
     // One step, then the honest fallback, so a broken phone is not walked down
     // the whole ladder nine seconds at a time.
+    var pool = scVideoLive(scVideoState.rungs);
+    if(!pool.length) pool = scVideoState.rungs;
     var def = null;
     if(!(Number(scVideoState.drops) > 0)){
-      def = scVideoRungBelow(scVideoState.rungs, scVideoState.rung ? scVideoState.rung.h : 0);
+      def = scVideoRungBelow(pool, scVideoState.rung ? scVideoState.rung.h : 0);
       if(def) scVideoState.drops = 1;
     }
-    if(!def) def = scVideoDefault(scVideoState.rungs);
+    if(!def) def = scVideoDefault(pool);
     if(def && scVideoState.rung && def.h !== scVideoState.rung.h){
       scVideoApplyRung(def, true);
       // On the footer, not the transient line: a playing picture clears that one
@@ -21342,6 +21512,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   function scVideoLoad(cand){
     if(!cand) return Promise.resolve(false);
+    // Which load this is. A resolve that comes back for a song the queue has already
+    // left is history, not a picture.
+    var seq = (scVideoState.loadSeq = (scVideoState.loadSeq || 0) + 1);
+    scVideoState.openedAt = scVideoSongTime();
+    scVideoCoverHide();
     scVideoState.videoId = String(cand.videoId || '');
     if(scVideoState.blobUrl){ try{ URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eOld){} scVideoState.blobUrl = ''; }
     var v = scVideoEl('scVideoEl');
@@ -21367,14 +21542,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
       scVideoState.busy = false;
+      if(seq !== scVideoState.loadSeq) return false;
       if(!r || !r.rungs || !r.rungs.length){
-        scVideoSpin(false); scVideoSay('This one has no stream the app can reach. NEXT tries another result.');
+        scVideoSpin(false);
+        // NOTHING TO PLAY AT ALL: the cover, not a black panel with a line on it.
+        if((scVideoState.cands || []).length < 2)
+          return scVideoNoVideo(scVideoState.last, 'No music video could be opened for this song.');
+        scVideoSay('This one has no stream the app can reach. NEXT tries another result.');
         return false;
       }
       scVideoState.vidLen = Number(r.length) || 0;
       var apply = function(){
         scVideoState.rungs = r.rungs;
-        var rung = scVideoRungFor(r.rungs, scVideoState.want);
+        // THE DEFAULT IS THE SHARPEST SIZE THAT PLAYS HERE. A height this phone has
+        // already refused is not landed on again; it stays in the list, marked, for
+        // a hand that wants to try it.
+        var live = scVideoLive(r.rungs);
+        var rung = scVideoRungFor(live.length ? live : r.rungs, scVideoState.want);
         if(r.title) scVideoTitle(r.title, cand.owner || '');
         scVideoApplyRung(rung, false);
         scVideoTickStart();
@@ -21394,6 +21578,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoMMSS(songLen) + ' song';
       scVideoFoot(offNote + ' - looking for the right one.');
       return scVideoSearch(scVideoState.last).then(function(list){
+        if(seq !== scVideoState.loadSeq) return false;
         if(!list || !list.length){
           scVideoFoot(offNote + ', and the search found nothing better.');
           return apply();
@@ -21421,6 +21606,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.last = t;
     scVideoState.title = t.title || '';
     scVideoState.artist = t.artist || '';
+    if(t.key) scVideoState.songKey = String(t.key);
+    scVideoCoverHide();
     var other = scVideoEl('scVideoNext');
     scVideoState.wrongTried = false;
     if(t.videoId){
@@ -21436,10 +21623,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(other) other.style.display = 'none';
     return scVideoSearch(t).then(function(cands){
       if(!cands.length){
-        scVideoSpin(false);
-        scVideoSay('No music video found for this song.');
-        scVideoFoot('A file has no video id, so the search is by artist and title.');
-        return false;
+        // NOTHING WAS FOUND, SO THE COVER IS THE PICTURE. A file has no video id, and
+        // a song without a video is a song, not a broken tab.
+        return scVideoNoVideo(t, 'No music video for this song.');
       }
       scVideoState.cands = cands;
       scVideoState.ci = 0;
@@ -21533,6 +21719,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.rung = null;
     scVideoState.resumeAt = null;
     scVideoState.startAt = null;
+    scVideoState.songKey = '';
+    scVideoState.openedAt = 0;
+    scVideoCoverHide();
     scVideoBig(false);
     scVideoSpin(false);
     scVideoSay('');
@@ -22773,7 +22962,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.5';
+  const APP_VERSION = '85.2.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23483,6 +23672,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.6', date: 'November 18, 2026', title: 'The picture is where the song is, and a song without one has a cover', items: [
+    '[FULL] The size list stops offering what does not work. A height this phone has refused is remembered and marked in the list as one that did not play here, and the tab never chooses it for you again; nothing under 360p is offered unless it is all the video has.',
+    '[FULL] The music video opens on the second the song is on, and says which second that was, instead of starting at the top of the clip while the song plays on two minutes in.',
+    '[FULL] The tab follows the queue. When the song moves on, the picture moves with it: the new song video opens on that song own second, and its results are what NEXT walks.',
+    '[FULL] A song with no music video shows its cover art, with the song playing as the sound, instead of a black rectangle with a line on it.'
+  ] },
       { version: '85.2.5', date: 'November 18, 2026', title: 'The clip has to be this song, and half a file is not a source', items: [
     '[FULL] The music video tab checks the clip it is given. A song from the catalogue carries a video id, and that clip used to play no matter what it was - a live take, a remix, or another song entirely - with NEXT hidden because there was only one candidate. A clip whose length is far from the song is now checked against a search by artist and title before it is trusted, and the results become the list NEXT walks.',
     '[FULL] A size that would not open may not have been the phone at all: a player row can hand over a URL with its own range on it, which is half a file and something an element cannot play. That parameter is removed before the picture and its own soundtrack see the URL, so a sharp size has a real chance here.',

@@ -1,44 +1,47 @@
-## 85.2.5 ({{STAMP}}): the clip has to be this song, and half a file is not a source
+## 85.2.6 ({{STAMP}}): the picture is where the song is, and a song without one has a cover
 
-**Two reports, one root each.** The tab put someone else's clip on screen for a
-song, and it kept landing on 360p. Neither was a mystery in the code once they were
-read together.
+**Four reports, and not one of them was the ladder.** The size list offered rows
+this phone cannot open, and then offered the same row again for the next song after
+it had already refused it - so "random qualities that do not work" was true on both
+halves of the sentence. The clip opened at the top of the file instead of at the
+second the song was on. And the tab stayed on the song it was opened for: the queue
+moved on and the film did not, which is the one thing that makes a music video tab
+useless in a queue.
 
-**The catalogue clip was never checked.** A song from the source carries a video
-id, and `scVideoStart` trusted it: one candidate, no search, `NEXT` hidden. When
-the catalogue's clip is right, that is exactly what should happen - but when it is
-a live take, a remix or another song entirely, nothing asked and nothing said, and
-there was no way to walk away from it. A clip is now measured against the song it
-was opened for: if the resolved video's length is more than twenty seconds **and**
-more than a tenth away from the song's, the clip is not trusted. The search runs
-once by artist and title, `scVideoRank` orders the results by length first, and
-those results become `scVideoState.cands` - so the picture that appears is the
-length-matched recording and `NEXT` walks the rest. A clip that matches is played
-exactly as handed over, untouched. If the search finds nothing, the catalogue clip
-still plays and the footer says why.
+**The list only offers what plays.** A height this phone refuses is remembered by
+height for the rest of the session (`scVideoState.deadH`), marked in the list as
+`did not play here`, and never landed on automatically again - the default, 1080p
+or AUTO, now walks past it to the sharpest size that actually plays
+(`scVideoLive`). A height whose only row is a codec the element cannot claim is
+marked the same way from `canPlayType`. Neither is hidden, because a hand may want
+to try one anyway; neither is offered as if it works. Nothing under 360p is listed
+at all unless it is the only thing the video has - those rows are the floor of a bad
+connection, and putting 240p beside FULL HD is half of why the list read as random.
 
-**Half a file is not a source.** A player row can carry its own `range` in the URL -
-`&range=0-1023` - because that is what the player asked for when it built the row.
-Handed straight to an element that then makes its own range requests, that URL is a
-partial file, and a partial file is refused with `MEDIA_ERR_SRC_NOT_SUPPORTED`,
-exactly like a phone that cannot decode the sharp size. `scVideoNoRange` strips the
-parameter from every video and audio URL in `take()` and in `scVideoSnd`, so the
-element asks for the bytes it wants. That refusal was indistinguishable from a
-device limit, which is why the picture kept sliding to the one-stream row.
+**The picture skips to the song.** `scVideoAttach` now takes its starting second
+from the song in every mode (`scVideoSongTime`), not just when the picture carries
+its own soundtrack. Song mode used to start the film at 0:00 while the song ran on
+underneath it. The footer says which second the picture came in at, because a film
+that starts halfway otherwise looks like a film that is broken.
 
-**And the tab says which page it is.** Two tabs that look identical can be two
-builds after an update, and every report about "still 360p" that arrives while a
-week-old bundle is on the screen costs a release. The size card's header now reads
-`QUALITY · v85.2.5`, from `window.APP_VERSION`, so the number that ships is the
-number on the screen.
+**The tab follows the queue.** `scVideoFollow`, called from the same tick that
+already keeps the picture on the song's clock, compares the playing song's key with
+the one the tab loaded for and - when it changes - gives the sound back, starts the
+song, and loads the new song's own video on that song's second. A resolve that comes
+back for a song the queue has already left is dropped (`scVideoState.loadSeq`), so
+a slow lookup cannot put the old film over the new song.
 
-**When a one-stream row is the floor, it says so.** A demotion that ends on a muxed
-row adds `That is the sharpest size this phone will play here.` - different news
-from a single stumble, and the thing worth knowing before opening the list again.
+**A song with no video has a cover.** Where there is nothing to play - a file the
+search cannot match, or a single candidate the player cannot resolve - the stage
+shows the track's own art, blurred behind itself and square in the middle, with one
+line saying so (`scVideoNoVideo`). The video element, the transport and the transport
+spinner are hidden while it is up, the song is the sound, and the tab keeps
+following the queue, so the next song that has a video gets one. No more black
+rectangle that cannot be told apart from a tab that failed.
 
-`dev/patch-8525.py` replaces the module as one slice (from the 85.2.4 banner to the
-shelf comment that follows it) with `dev/video-8525.js`, then moves the version
-line, the cache name, one new notes entry and `updates.json` to 85.2.5. A second run
+`dev/patch-8526.py` replaces the module as one slice (from the 85.2.5 banner to the
+shelf comment that follows it) with `dev/video-8526.js`, then moves the version
+line, the cache name, one new notes entry and `updates.json` to 85.2.6. A second run
 is a no-op.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
@@ -46,27 +49,28 @@ Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.js
 
 ### What was checked, and what was not
 
-Checked: `dev/check-8525.cjs` passes 136 assertions, the 123 of 85.2.4 included.
-The ones this release is about: `scVideoNoRange` removes a middle `range` and a
-trailing one, leaves a URL with no range alone, and the 1080p rung the element is
-given has no `range` while its `itag` and `mime` survive; the paired soundtrack
-row is cleaned the same way; the size card carries the app version; a catalogue
-clip that runs 262s for a 210s song is not trusted - the search is asked once, the
-length-matched result (`right`, 209s) is what plays, its title reaches the header
-and `NEXT` is offered - while a catalogue clip that matches (209s for 210s) is
-played as handed over and the search is never asked. The 85.2.4 guard against an
-error with no `MediaError` still holds, so does 85.2.3's retry and watch, 85.2.2's
-FULL HD default and 85.2.1's single sound.
-`python3 dev/patch-8525.py --check` exits 1 before and 0 after, a second run prints
-`already on the page`, all 7 inline scripts of the patched page parse, the module
-on the page is byte-identical to `dev/video-8525.js`, and the sound flag is still
-read in all five places. Bundles reached their fixed point and both channels verify
-with `--check`.
+Checked: `dev/check-8526.cjs` passes 157 assertions, the 136 of 85.2.5 included.
+The ones this release is about: with 1080p refused by the element at code 4, the
+height is recorded, the picture steps to 720p, the **next** video opens at 720p
+rather than 1080p again, and the list marks 1080p `off` with `did not play here`
+while 720p, 480p and 360p stay offered and 240p is not listed at all; a clip loaded
+with the song at 1:32 puts the picture on 92s and the footer says `Started at 1:32,
+where the song is`; a song whose search returns nothing turns on the cover with the
+track art in the image, the same art blurred behind it, the stage class that hides
+the empty element, the line `No music video for this song.`, the song playing as the
+sound and the tab still knowing which song it is on; and moving the queue from track
+one to track two leaves the picture where it is when the key is unchanged and loads
+the new song's video (both player clients asked) when it changes.
+`python3 dev/patch-8526.py --check` exits 1 before and 0 after, a second run prints
+`already on the page`, all 7 inline scripts of the patched page parse, the module on
+the page is byte-identical to `dev/video-8526.js`, and the sound flag is still read
+in all five places. Bundles reached their fixed point and both channels verify with
+`--check`.
 
-Not checked: no phone, and no browser session drove this screen. The `range` strip
-is proven as text surgery on the URL the element is handed, not as a 1080p frame on
-a device - and the player call still cannot be re-measured from this sandbox, which
-the host answers with `LOGIN_REQUIRED`. So: if the sharp sizes now play, the range
-was the cause; if they still land on the one-stream row, the footer names the row
-and the codec and the size card names the build, and those two lines are what the
-next step needs.
+Not checked: no phone, and no browser session drove this screen, so the cover card
+was never looked at - its layer, its blur and its sizing are CSS that has not been
+rendered here, and the queue-following was proven as a key comparison and a load,
+not as a film changing by itself on a device. Whether a particular phone really
+cannot open 1080p (as opposed to failing once on a bad second and being marked for
+the session) is also unproven; the list still lets a marked height be picked by
+hand, and the marking ends with the session.
