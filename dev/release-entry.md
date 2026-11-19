@@ -1,75 +1,70 @@
-## 85.2.1 ({{STAMP}}): one sound, and the frame is the clock
+## 85.2.2 ({{STAMP}}): FULL HD by default, and one step down
 
-**85.2.0 kept the second and lost the sound.** A high size is the picture and the
-video's own soundtrack in two elements, and the soundtrack was started the moment
-it was ready - which on a phone is usually before the first frame. Whatever head
-start it took, it kept: the two clocks then run a fraction of a percent apart, and
-85.2.0 only pulled the voice back when it was more than half a second out. So a
-1080p or 4K picture ran with its own sound a few tenths of a second off, and it
-stayed that way for the whole song. The other half was worse and simpler: the song
-under the film was being **started again** by the app's own recovery. The
-thirty-second media heartbeat revives a paused source, and a return from the
-background revives a paused deck song, and neither of them knew the video tab was
-playing - so the film and the song were both audible, seconds apart.
+**85.2.1 made every size sound right, and the tab still opened on the soft one.**
+AUTO is the best row that carries its own sound, which on most videos is the 360p
+progressive row a phone is handed - so the sharpest picture the video had was one
+tap away in a list, and nothing on the screen said so. A viewer who never opened
+that list watched the music video at the lowest quality the video offered. The
+other half was a cliff: a size the phone refused fell straight to that same 360p
+row, so one refused 1080p cost the 720p picture as well.
 
-**One sound, and it is the picture's.** Exactly one of the picture, its paired
-soundtrack and the song is audible at a time. The tab now publishes which one owns
-the sound (`window.__scVideoSoundOwn`), and the app reads it in the four places
-that can start a song: both elements' own `play` listeners stop themselves, the
-heartbeat does not revive a source under it, and `recoverAudio` returns before it
-restarts a deck song. Closing the tab clears the flag **before** the song is handed
-back, so the resume on close is not mistaken for a song starting under the film. A
-size with no audio row gives the sound to the song, because there the song is the
-soundtrack.
+**Full HD unless you say otherwise.** A viewer who has never chosen a size opens
+at 1080p, and a video with no 1080p opens at the largest size under it rather than
+at the smallest. AUTO is still a choice and is stored as one, so "never chose" and
+"chose AUTO" are no longer the same answer, and a size picked by hand is still kept
+for the next video. The 1080p row in the list is marked as the default, so the
+size the picture landed on has a reason on the screen.
 
-**The frame is the clock, and the voice follows it.** The soundtrack waits for the
-picture to be playing before it is heard, starts on the picture's second, and is
-then held to a tenth of a second - trimmed by running it a hair fast or slow, not
-jumped, so the lock is inaudible. Only a real gap is a jump: more than 0.6s, which
-is a seek, a size change or a buffered picture. A picture that pauses, stalls or
-ends takes its voice with it, and a `seeked` event - a native seek, not just the
-progress line - puts the voice on the new second. The one-stream sizes are
-untouched: there the picture carries its own sound and nothing else is unmuted.
+**A refusal steps down one size, not to the floor.** The road is unchanged - two
+more codecs at the height that was asked for, and only then smaller - but the step
+after that is now the rung directly under the one that failed: 1080p refused is a
+720p picture, a second refusal takes the best one-stream size. The footer still
+names the size it landed on, and the size that was chosen is still remembered for
+the next video, because it was this phone that could not open it.
 
-**What 85.2.0 shipped is otherwise as it was.** A size change holds its second at
-every size, a refused size falls back with a line saying which and keeps the size
-that was chosen, the landscape transport steps aside two seconds after the last
-touch, and the progress line is a handle.
+**The list says why the picture is not the size expected.** A video that tops out
+at 720p now says so in the size list, where the sizes are, instead of leaving it to
+be worked out from a list whose largest row is smaller than the default. The note
+that explains a paired soundtrack sits under the same line.
 
-`dev/patch-8521.py` replaces the module as one slice (from the 85.2.0 banner to the
-shelf comment that follows it) with `dev/video-8521.js`, adds the four guards in
-`index.html` (the deck's play listener, the stream element's play listener, the
-heartbeat revive, `recoverAudio`), each matched exactly once, then moves the version
-line, the cache name, one new notes entry and `updates.json` to 85.2.1. A second run
-is a no-op.
+**The sound of 85.2.1 is untouched.** One audible element, the picture as the
+clock, its own voice held to a tenth of a second by trimming its rate, and the
+song unable to start underneath the film. Nothing in the app half changed, so the
+tab still publishes the flag and the four guards still read it.
+
+`dev/patch-8522.py` replaces the module as one slice (from the 85.2.1 banner to the
+shelf comment that follows it) with `dev/video-8522.js`, checks that the four
+85.2.1 guards are still on the page, then moves the version line, the cache name,
+one new notes entry and `updates.json` to 85.2.2. A second run is a no-op.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only: no native change, so the APK is not rebuilt.
 
 ### What was checked, and what was not
 
-Checked: `dev/check-8521.cjs` runs the module that ships against a stubbed DOM and
-passes 93 assertions. The ones this release is about: a soundtrack whose `canplay`
-arrives while the picture is paused is **not** started and stays muted, and the same
-event with the picture running starts it on the picture's second; a drift of 0.2s
-is not seeked but trimmed (`playbackRate` 0.92, position left alone), a drift of
-9s is jumped onto the frame, and the rate returns to 1 once the two are back
-together; a picture `pause`, `waiting` and `seeked` each pause or move the voice;
-a high size leaves the picture muted with only the soundtrack audible, a one-stream
-size unmutes the picture and re-mutes the soundtrack, a size with no audio gives the
-flag back, and closing clears the flag before the song resumes. The 85.2.0
-assertions still pass unchanged - the pose before the load, the picture not being
-moved by the voice, the paused size change, the landscape idle, the drag, the
-refusal falling back to 720p. `python3 dev/patch-8521.py --check` exits 1 before and
-0 after, a second run prints `already on the page`, all 7 inline scripts of the
-patched page parse, the module on the page is byte-identical to
-`dev/video-8521.js`, and the flag is read in all five places that matter. Bundles
-reached their fixed point in three passes and both channels verify with `--check`.
+Checked: `dev/check-8522.cjs` runs the module that ships against a stubbed DOM and
+passes 107 assertions. The ones this release is about: with nothing stored the tab
+asks for 1080p and opens on the 1080p rung, muted, with its own track as the voice
+and the song parked; a ladder without 1080p opens at 720p; `scVideoRungBelow`
+answers 720p under 1080p and nothing under the smallest rung; the list marks
+1080p as current and as the default and says AUTO is the best one-stream size; a
+stored 720 opens at 720, a stored `auto` asks for AUTO and not FULL HD, and an
+empty store asks for 1080p again; a refused 4K lands on 1440p and says so, a
+second refusal takes the 720p one-stream row and unmutes the picture, and picking
+a size by hand clears the step-down so the road starts again; a video whose only
+row is a 360p adaptive one says in the list that it has no 1080p and tops out at
+360p. The 85.2.1 assertions still pass unchanged - the voice waiting for a running
+frame, the trimmed drift, the pause, the buffer, the seek, one sound, and closing
+handing the song back at the picture's second.
+
+`python3 dev/patch-8522.py --check` exits 1 before and 0 after, a second run prints
+`already on the page`, all 7 inline scripts of the patched page parse, the module
+on the page is byte-identical to `dev/video-8522.js`, and the sound flag is still
+read in all five places. Bundles reached their fixed point in three passes and both
+channels verify with `--check`.
 
 Not checked: no phone, and no browser session drove this screen in this session.
-What is proven is the order of the starts, the direction of the corrections and
-that the flag is read where a song can begin - as code and arithmetic, not as
-lip-sync on a device. Whether a particular phone keeps two media elements locked to
-a tenth of a second, and how the rate trim sounds through a real speaker, are for
-the owner. Nothing in the tab muxes: a paired soundtrack is still two elements, so
-this is a lock, not a single stream.
+What is proven is which rung a fresh install asks for, which rung a refusal lands
+on and what the list says - as code and arithmetic, not as a 1080p picture on a
+device. Whether a particular phone decodes a particular 1080p row, and how long
+the switch takes on a real radio, are for the owner.

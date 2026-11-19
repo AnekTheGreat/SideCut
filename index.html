@@ -19876,6 +19876,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.2 - FULL HD BY DEFAULT, AND ONE STEP DOWN ────────────────────────
+  // WHAT 85.2.1 LEFT UNFINISHED. The tab opened on AUTO, and AUTO is the best
+  // row that carries its own sound - which on most videos is the 360p
+  // progressive row a phone is handed. Every sharper size was in the list and
+  // nothing said so, so the first picture a viewer saw was the softest one the
+  // video had. The other half was a cliff: a sharp size this phone refused fell
+  // straight to that same 360p row, so one refused 1080p cost the 720p picture
+  // as well.
+  //
+  // FULL HD UNLESS YOU SAY OTHERWISE. A viewer who has never opened the list
+  // gets 1080p - the sharpest size that still plays on a phone - or the largest
+  // size under it when a video has no 1080p, with the list saying which. AUTO is
+  // still a choice, a size that was chosen is still kept for the next video, and
+  // a refused size steps down one size before it gives up: 1080p refused becomes
+  // 720p, not 360p. The 85.2.1 sound lock is untouched - the picture is the
+  // clock, its own voice follows it, and only one thing is audible at a time.
   // ─── 85.2.1 - ONE SOUND, AND THE FRAME IS THE CLOCK ─────────────────────────
   // WHAT 85.2.0 LEFT WRONG. A high size is the video's picture plus the same
   // video's own soundtrack in a second element, and that element was allowed to
@@ -19948,10 +19964,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
+  var SC_VQ_DEFAULT = 1080;                // a viewer who has never chosen gets FULL HD
   var SC_VQ_READ_MAX = 64 * 1024 * 1024;   // the byte reader is not a 4K decoder
   var SC_VQ_IDLE_MS = 2000;                // the transport rests two seconds into landscape
 
@@ -20090,6 +20107,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     return exact || below || above || use[0];
   }
+  // The rung directly under this one, for a refusal that should not cost the
+  // whole picture: 1080p refused is a 720p picture, not a 360p one.
+  function scVideoRungBelow(rungs, h){
+    var best = null;
+    (rungs || []).forEach(function(r){
+      if(!r || !r.h || r.h >= h) return;
+      if(!best || r.h > best.h) best = r;
+    });
+    return best;
+  }
 
   function scVideoPref(val){
     try{
@@ -20100,7 +20127,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_ePref){}
     return null;
   }
-  function scVideoWant(){ return Number(scVideoPref()) || 0; }
+  // FULL HD UNLESS A CHOICE WAS MADE. Nothing stored means this viewer has never
+  // opened the size list, and the answer is the sharpest common size rather than
+  // the softest one that happens to carry its own sound. A stored zero is AUTO,
+  // which was a choice, and is kept as one.
+  function scVideoWant(){
+    var raw = scVideoPref();
+    if(raw === null || raw === '') return SC_VQ_DEFAULT;
+    var h = Number(raw) || 0;
+    return h > 0 ? h : 0;
+  }
   function scVideoWantSet(h){ scVideoPref(Number(h) > 0 ? Number(h) : 'auto'); }
 
   function scVideoCss(){
@@ -20740,8 +20776,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var h = auto ? 0 : rung.h;
     var title = auto ? 'AUTO' : rung.label;
     var sub = auto
-      ? 'the best stream with its own sound'
-      : rung.tag + ' \u00b7 ' + rung.codec + ' \u00b7 ' + Math.max(1, Math.round((rung.size || 0) / 1048576)) + ' MB' +
+      ? 'the best one-stream size for this phone'
+      : (rung.h === SC_VQ_DEFAULT ? 'default \u00b7 ' : '') +
+        rung.tag + ' \u00b7 ' + rung.codec + ' \u00b7 ' + Math.max(1, Math.round((rung.size || 0) / 1048576)) + ' MB' +
         (rung.muxed ? ' \u00b7 one stream' : (rung.audioUrl ? ' \u00b7 its own track' : ' \u00b7 song underneath'));
     return '<button type="button" class="sv-qr' + (cur ? ' cur' : '') + '" data-h="' + h + '"' +
       (cur ? ' aria-current="true"' : '') + '>' +
@@ -20762,10 +20799,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(note){
       var paired = false;
       rungs.forEach(function(r){ if(!r.muxed && r.audioUrl) paired = true; });
-      note.style.display = paired ? '' : 'none';
-      note.textContent = paired
-        ? 'Above the one-stream sizes the picture and the same video soundtrack arrive as two streams and are played together.'
-        : '';
+      // QOL: why the picture is not the size that was expected is written where
+      // you look to change it, instead of being left to be worked out.
+      var lines = [];
+      var top = rungs.length ? rungs[0].h : 0;
+      if(scVideoState.want && top && top < scVideoState.want){
+        lines.push('This video has no ' + scVideoState.want + 'p - it tops out at ' + top + 'p.');
+      }
+      if(paired) lines.push('Above the one-stream sizes the picture and the same video soundtrack arrive as two streams and are played together.');
+      note.style.display = lines.length ? '' : 'none';
+      note.textContent = lines.join(' ');
     }
   }
   function scVideoQualityMark(){
@@ -20778,6 +20821,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoQualityToggle(false);
     scVideoIdleWake();
     scVideoWantSet(h);
+    scVideoState.drops = 0;             // a size picked by hand gets the whole road
     scVideoState.want = Number(h) || 0;
     var r = scVideoRungFor(scVideoState.rungs, h);
     if(!r) return;
@@ -21079,7 +21123,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // Then the honest fallback: the best size that carries its own sound. The
     // size the owner chose is kept for the next video - it is this phone that
     // could not open it, not a choice that was wrong.
-    var def = scVideoDefault(scVideoState.rungs);
+    // ONE STEP DOWN, NOT A CLIFF. A phone that refuses the size asked for can
+    // usually open the one under it, and dropping straight to the smallest size
+    // with its own sound threw the 720p picture away because 1080p was refused.
+    // One step, then the honest fallback, so a broken phone is not walked down
+    // the whole ladder nine seconds at a time.
+    var def = null;
+    if(!(Number(scVideoState.drops) > 0)){
+      def = scVideoRungBelow(scVideoState.rungs, scVideoState.rung ? scVideoState.rung.h : 0);
+      if(def) scVideoState.drops = 1;
+    }
+    if(!def) def = scVideoDefault(scVideoState.rungs);
     if(def && scVideoState.rung && def.h !== scVideoState.rung.h){
       scVideoApplyRung(def, true);
       // On the footer, not the transient line: a playing picture clears that one
@@ -21155,6 +21209,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.rungs = [];
     scVideoState.rung = null;
     scVideoState.resumeAt = null;
+    scVideoState.drops = 0;
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
       scVideoState.busy = false;
@@ -22534,7 +22589,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.1';
+  const APP_VERSION = '85.2.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23244,6 +23299,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.2', date: 'November 18, 2026', title: 'Full HD by default', items: [
+    '[FULL] The music video opens at FULL HD now. The tab used to open on AUTO, which is the best row that carries its own sound - usually 360p - so the sharpest sizes sat in a list nobody had a reason to open. 1080p is where a viewer who has never picked a size now lands, and the size list marks that row as the default.',
+    '[FULL] A video with no 1080p opens at the largest size under it, and the size list says so on the spot instead of leaving you to work out why the picture is softer than expected.',
+    '[FULL] A size the phone refuses steps down one size instead of falling to the smallest - 1080p refused becomes 720p, not 360p - and the size you picked is still kept for the next video. AUTO is still in the list, and choosing it stays chosen.'
+  ] },
       { version: '85.2.1', date: 'November 18, 2026', title: 'One sound, and the frame is the clock', items: [
     '[FULL] The picture and its sound are locked together. A high size is the picture plus the video own soundtrack in a second element, and that element could start before the first frame and keep the head start - it was only pulled back when it was more than half a second out. It now waits for the picture to be playing, starts on the picture second, and is held to about a tenth of a second by trimming its rate instead of jumping it back.',
     '[FULL] One sound at a time. A song paused by the video tab could be started again by the recovery the app runs in the background - every thirty seconds, and on the way back from the background - so the song played underneath the film. The tab now marks itself as the owner of the sound, and anything the app tries to start under it is stopped again.',
