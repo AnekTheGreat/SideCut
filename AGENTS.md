@@ -1,5 +1,82 @@
 # SideCut — repository memory
 
+## 85.3.3 (November 19, 2026 · 5:02 PM EST): the sharp size is read when the player refuses it, and HD+ sharpens instead of washing
+
+**The ladder was right and the picture still landed on 360p.** The report after 85.3.2
+was the same screen with a different line under it: `This size did not play here (this
+source is not a video the element can open)`. That sentence is a verdict on the
+ADDRESS, not on the picture behind it - a cross-origin media request, a link the media
+stack will not follow, a host that answers this app through its native bridge and not
+through a tag - and the tab was answering it by walking 1080p to 720p to 480p to the
+one-stream 360p row and staying there.
+
+**So the size is read instead.** The app already holds a reader that never touches the
+element: the native bridge (`scFetchBytes`, one-megabyte ranges) that the downloader
+and Streaming read with. When a sharp row is refused with a decoder or container code,
+that row is read once through the bridge at the second the picture was on and played
+from a blob. One read per size per video (`scVideoState.rescueH`, cleared with the
+dead-height map on every `scVideoLoad`), the one-stream rows are never read because
+they already play, and a size whose bytes do not come either is given up on the way it
+used to be - one rung down, with the footer saying so. A size past the reader's
+ceiling (40 MiB on the bridge, 64 MiB with no ceiling reported) is not read.
+
+**And the links keep their query.** `scVideoNoRange` drops the `range` parameter a
+player puts in a row, because half a file is not a source - but it rebuilt the rest of
+the query with two replacements, so a link whose first pair was `range` came back as
+`path&itag=137`: a path with no query at all, refused by the element for a reason that
+had nothing to do with the picture. The pair is dropped and every other pair is kept
+in the order the player sent it.
+
+**And HD+ is an unsharp mask again.** 85.3.1 replaced the sharpen with a contrast copy
+laid over the frame at 0.45 alpha through `overlay`, which lifts the bright end and
+reads as milk over a film that was already soft. The frame is now drawn, a second
+off-page canvas holds it blurred and then that copy subtracted from the frame - the
+outlines - and those outlines are laid back over the frame at 0.6 alpha with `lighter`.
+Flat areas are untouched, edges come up, nothing is added to the highlights. The buffer
+is never put in the page and is overwritten every frame; a phone that will not hand
+over a second context keeps the resampled frame.
+
+`dev/build-8533.py` rebuilds `dev/video-8533.js` from `dev/video-8532.js`, slicing the
+query strip and the paint function by their own boundaries and asserting every other
+edit appears exactly once. `dev/patch-8533.py` replaces the module slice (from the
+85.3.3 banner to the shelf comment that follows it), then moves the version line, the
+cache name, one notes entry and `updates.json` to 85.3.3. It refuses to finish if the
+module carries `scVideoUrl` again, if the 85.2.1 sound flag is read fewer than five
+times, or if the washing `overlay` pass comes back.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1303548 bytes**, `ota-play/updates.json` **1303564 bytes**. Page-only: no native
+change, so the APK is not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `dev/check-8533.cjs` passes **235 assertions, 0 failed**, the 213 of 85.3.2
+included. The ones this release is about: a `range` pair in the middle, at the front,
+at the end and alone is dropped while the rest of the query survives, a link with no
+range and a blob are untouched; with a 1080p row refused at code 4 the tab asks the
+bridge for that row's URL once, asks for the length it reported, stays on 1080p, plays
+`blob:…`, is back on the second it was on (42s), says `read instead (1080p)` on the
+footer, and the one-stream row is never read; the same size is not read twice and the
+next refusal steps down to 720p; a reader that answers nothing steps down with the
+footer naming the size it went to; `scVideoReadCap` reports 64 MiB when the page has no
+ceiling. And the frame: the fx canvas is `fill, draw:source-over, draw:lighter`, a
+second off-page canvas holds `fill, draw:source-over, draw:difference`, there is no
+`overlay` pass left, and both contexts are left at alpha 1 / `source-over` / no filter.
+`python3 dev/patch-8533.py` applied cleanly and a second run prints `already on the
+page`; the module on the page is byte-identical to `dev/video-8533.js`, all 7 inline
+scripts of the page parse, `function scVideoUrl` is absent, and the sound flag is still
+read in all five places. Both OTA channels reached their fixed point and verify with
+`--check` (3 notes on the full channel, 1 on Play, which filters the `[FULL]` lines).
+
+Not checked: nothing here was run on a phone, and the player call still cannot be made
+from this sandbox - the host answers `LOGIN_REQUIRED` to a datacenter address. So what
+is proven is that a refusal reaches the bridge with the right URL and length and that
+the bytes become the picture again; whether the bridge can fetch a particular 1080p row
+on a particular phone, and how long a 24 MB read takes over a phone's connection, are
+for the owner. The sharpen is proven as draw calls against a fake 2D context; how it
+reads on a screen, and what four draws plus one blur cost per frame on a real device,
+are unmeasured. The size card, the blob playback and the footer were not rendered.
+
 ## 85.3.2 (November 19, 2026 · 4:05 PM EST): the size ladder is the ladder, the resolver is always asked, and the library opens on Albums
 
 **Three complaints about the music video tab, and a request about the library.** The

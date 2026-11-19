@@ -19878,38 +19878,39 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.3.2 - THE LADDER IS THE LADDER, AND THE RESOLVER IS ALWAYS ASKED ───────
-  // THREE REPORTS, AND EACH ONE HAD A CAUSE IN THE CODE.
+  // ─── 85.3.3 - A REFUSED ADDRESS IS NOT A REFUSED PICTURE ──────────────────────
+  // THE SIZE LIST WAS RIGHT AND THE PICTURE STILL LANDED ON 360p. 85.3.2 put the
+  // ladder in, step by step, and made the resolver give every video its rows - and the
+  // tab still walked 1080p, 720p and 480p down to the one-stream row, because each of
+  // those rows was refused by the element itself (`this source is not a video the
+  // element can open`). Everything about that refusal is about the ADDRESS: a
+  // cross-origin media request, a URL the media stack will not fetch, a host that
+  // answers this app through its native bridge and not through a tag. None of it says
+  // anything about the picture behind the address.
   //
-  // THE LIST WAS NOT A LADDER. It offered whatever height a row happened to report
-  // and hid everything under 360p, so 144p and 240p could not be picked at all and
-  // an encode with an odd height put a number in the list that is not a size anyone
-  // compares. Every height is now read as the nearest one of 144p, 240p, 360p, 480p,
-  // 720p, 1080p, 1440p, 2K and 4K, every one of those the video has is listed, and
-  // 2K and 4K say their own names.
+  // SO THE SIZE IS READ. The app already holds a reader that does not go through the
+  // element at all - the native bridge the downloader and Streaming read with, ranges
+  // and all. When a sharp row is refused with a decoder or container code, that row
+  // is read once, at the second the picture was on, and played from memory. The
+  // refusal that used to cost the picture is now one extra fetch of the size the
+  // viewer asked for; only a size whose bytes cannot be read either is given up on,
+  // and then the ladder steps down as before. A height is read once per video and
+  // never again, and the one-stream rows are never read because they already play.
   //
-  // 360p WAS EVERY VIDEO AFTER THE FIRST. One refused height was written into a
-  // session-wide memory, so the first video that could not open 1080p on this phone
-  // taught the tab to stop asking - every song after it opened on the one-stream row
-  // and stayed there. The memory is per video now: a size the phone refused is not a
-  // verdict on the next song, and the list still marks it for the video it happened
-  // on.
+  // AND THE LINKS KEEP THEIR QUERY. `scVideoNoRange` removes the `range` parameter a
+  // player puts in a row - half a file is not a source - but the rest of the query
+  // was rebuilt by a pair of replacements that left `?&` behind when `range` was the
+  // first parameter, and a query that starts with `&` is not a query: the element was
+  // handed a path and refused it. The parameter is dropped and the remaining pairs
+  // are kept intact now.
   //
-  // AND THE FALLBACK WAS A CLIFF. A refusal stepped down once and then jumped to the
-  // smallest row that carries its own sound, so 1080p refused was 720p and 720p
-  // refused was 360p - the 480p picture was never offered. Each refusal now steps to
-  // the rung directly under the one that failed.
-  //
-  // THE RESOLVER IS ASKED FOR EVERY VIDEO. 85.3.1 asked `scYtPlayer` only when the
-  // tab's own two-client call came back under 1080p - so a call that produced a
-  // 1080p row from a client whose address this phone then refused never consulted the
-  // resolver, and fell down the ladder to 360p. The resolver is the call the
-  // converter, the downloader and Streaming play with, so its rows are seated first
-  // at their own height and the answer is kept per video.
-  //
-  // A TAP ON THE PICTURE ONLY BRINGS THE BAR BACK. It no longer starts a stopped
-  // film either: play and pause are the round button and the big drawn button over a
-  // still, which is what the bar is for.
+  // AND HD+ SHARPENS INSTEAD OF WASHING. 85.3.1 replaced the sharpen with a contrast
+  // copy laid over the frame at half alpha through `overlay`, which lifts highlights
+  // and crushes shadows - on a soft film that already looked hazy it read as milk
+  // over the picture. An unsharp mask is back, built in one off-page canvas: the
+  // frame blurred, that copy subtracted from the frame (the outlines), and those
+  // outlines laid back over the frame. Flat areas are untouched, edges come up, and
+  // nothing is added to the bright end.
 
   var scVideoState = {
     open: false, busy: false, tick: null, cands: [], ci: 0,
@@ -19919,7 +19920,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
-    deadH: {}, app: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
+    deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
     fxOn: false, fxRaf: 0
   };
 
@@ -19931,7 +19932,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_WATCH_PER_MB = 300;            // and this much more for every megabyte it fetches
   var SC_VQ_IDLE_MS_PORTRAIT = 3200;       // the mini bar steps aside in portrait too
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
-  var SC_VFX_AMOUNT = 0.45;                // how much of the clarity pass is laid over the frame
+  var SC_VFX_AMOUNT = 0.6;                 // how much of the frame's own edges comes back
+  var SC_VFX_BLUR = 'blur(1px)';           // the copy the edges are taken from
   // THE SIZES A VIDEO CAN HAVE. Whatever height a row reports is read as the nearest
   // one of these, so the list is the ladder a viewer knows instead of a number the
   // encode happened to land on.
@@ -20030,9 +20032,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoNoRange(u){
     var s = String(u || '');
     if(!/^https?:/i.test(s) || !/[?&]range=/i.test(s)) return s;
-    s = s.replace(/([?&])range=[^&]*/i, '$1');
-    s = s.replace(/[?&](?=&|$)/g, '');
-    return s;
+    // THE PARAMETER BELONGS TO WHOEVER ASKED FOR IT, THE REST OF THE QUERY IS THE
+    // ADDRESS. Dropping `range` with two replacements left `?&` where the first pair
+    // had been, and `?&itag=137` is a path with no query at all - the element then
+    // refused a link that was fine before it was edited. Every other pair is kept in
+    // the order the player sent it.
+    var q = s.indexOf('?');
+    var head = q === -1 ? s : s.slice(0, q);
+    var tail = q === -1 ? '' : s.slice(q + 1);
+    var kept = [];
+    tail.split('&').forEach(function(pair){
+      if(!pair || /^range=/i.test(pair)) return;
+      kept.push(pair);
+    });
+    return kept.length ? (head + '?' + kept.join('&')) : head;
   }
   function scVideoSnd(row){
     if(!row) return null;
@@ -20996,6 +21009,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_eFxCv){ scVideoFxCv = null; scVideoFxCtx = null; }
     return scVideoFxCv;
   }
+  // The buffer the sharpen is built in. It is never in the page: it holds one frame's
+  // blurred copy and then that copy taken out of the frame, and it is overwritten with
+  // the next one. A phone that will not hand over a second context keeps the resampled
+  // frame instead of a black stage.
+  var scVideoFxBufCv = null, scVideoFxBufCtx = null;
+  function scVideoFxBuff(W, H){
+    if(!scVideoFxBufCv){
+      try{
+        var cv = document.createElement('canvas');
+        cv.id = 'scVideoFxBuf';
+        var cx = cv.getContext ? cv.getContext('2d') : null;
+        if(!cx) return null;
+        scVideoFxBufCv = cv; scVideoFxBufCtx = cx;
+      }catch(_eBuf){ scVideoFxBufCv = null; scVideoFxBufCtx = null; return null; }
+    }
+    if(scVideoFxBufCv.width !== W || scVideoFxBufCv.height !== H){
+      scVideoFxBufCv.width = W; scVideoFxBufCv.height = H;
+    }
+    return { cv: scVideoFxBufCv, ctx: scVideoFxBufCtx };
+  }
   function scVideoFxPaint(){
     var v = scVideoEl('scVideoEl'), cv = scVideoFxCv, ctx = scVideoFxCtx;
     if(!v || !cv || !ctx) return;
@@ -21018,20 +21051,46 @@ function startLyricsAutoScroll(keepPos, noReset) {
     ctx.globalAlpha = 1;
     try{ ctx.filter = 'none'; }catch(_eFxF){}
     try{ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }catch(_eFxSm){}
+    // THE EDGES ARE WHAT A SOFT FILM IS MISSING. A second canvas holds the frame
+    // blurred, and the frame subtracted from that copy: the difference is the outline
+    // of everything in the shot. Only that outline is added back, so flat areas stay
+    // exactly where they were and the bright end is not lifted - which is what the
+    // contrast-over-itself pass did, and why a low size looked washed instead of sharp.
+    var buf = scVideoFxBuff(W, H);
+    if(buf){
+      var bx = buf.ctx;
+      try{
+        bx.globalCompositeOperation = 'source-over';
+        bx.globalAlpha = 1;
+        bx.fillStyle = '#000';
+        bx.fillRect(0, 0, W, H);
+        bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high';
+        bx.filter = SC_VFX_BLUR;
+        bx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+        bx.filter = 'none';
+        bx.globalCompositeOperation = 'difference';
+        bx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+      }catch(_eFxBuf){
+      }finally{
+        try{ bx.filter = 'none'; bx.globalCompositeOperation = 'source-over'; bx.globalAlpha = 1; }catch(_eFxBufReset){}
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    try{ ctx.filter = 'none'; }catch(_eFxF){}
+    try{ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }catch(_eFxSm){}
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
-    // ONE CLEARITY PASS. The same frame, contrast-stretched, over itself: local contrast
-    // goes up and edges read sharper, for one more draw and nothing to hold between
-    // frames. A phone whose canvas refuses `filter` still gets the resampled frame.
-    try{
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.globalAlpha = SC_VFX_AMOUNT;
-      ctx.filter = 'contrast(1.5) saturate(1.06)';
-      ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
-    }catch(_eFxPass){
-    }finally{
-      try{ ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }catch(_eFxReset){}
+    if(buf){
+      try{
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = SC_VFX_AMOUNT;
+        ctx.drawImage(buf.cv, 0, 0);
+      }catch(_eFxPass){
+      }finally{
+        try{ ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }catch(_eFxReset){}
+      }
     }
   }
   function scVideoFxFrame(){
@@ -21566,6 +21625,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
       scVideoState.retries = 0;
     }
+    // THE ADDRESS MAY BE THE ONLY THING WRONG WITH IT. Read the size the element
+    // refused, once, with the bridge the downloader uses - a row whose URL the media
+    // stack will not open is a row the app can still play from memory. This is what
+    // keeps the picture at the size that was asked for instead of walking to 360p.
+    if((code === 3 || code === 4) && scVideoRescue(from)) return;
     // Another codec at the same height, first: the size the owner asked for is
     // worth one more stream before it is given up on.
     var alts = scVideoState.alts || [];
@@ -21623,6 +21687,71 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoBig(true);
     scVideoSay('This video could not be played here (' + why + '). NEXT tries another result.');
     scVideoFoot('Close this tab to go back to the song.');
+  }
+
+  // THE READER CEILING. The bridge reads a file in one-megabyte ranges and stops at
+  // its own ceiling; a size past it is not read, it is stepped down from.
+  function scVideoReadCap(){
+    try{ if(typeof SC_AUDIO_MAX === 'number' && SC_AUDIO_MAX > 0) return SC_AUDIO_MAX; }catch(_eCap){}
+    return SC_VQ_READ_MAX;
+  }
+
+  // A REFUSED ADDRESS IS NOT A REFUSED PICTURE. `this source is not a video the
+  // element can open` is a verdict on the URL and on nothing else: a cross-origin
+  // media request, a link the media stack will not fetch, a host that answers this app
+  // through the native bridge and not through a tag. The app already reads googlevideo
+  // through that bridge - it is how the downloader and Streaming work - so the size
+  // that was refused is read there, at the second the picture was on, and played from
+  // memory. One read per size per video; the one-stream rows are never read because
+  // they are the ones that already play.
+  function scVideoRescue(rung){
+    if(!rung || rung.muxed || !rung.url) return false;
+    if(typeof scFetchBytes !== 'function') return false;
+    var size = Number(rung.size) || 0;
+    var cap = scVideoReadCap();
+    if(size > cap) return false;                       // this reader cannot hold it
+    if(!scVideoState.rescueH) scVideoState.rescueH = {};
+    if(scVideoState.rescueH[rung.h]) return false;     // this size was already read
+    scVideoState.rescueH[rung.h] = 1;
+    var v = scVideoEl('scVideoEl');
+    scVideoState.resumeAt = v ? (Number(v.currentTime) || 0) : 0;
+    scVideoSpin(true);
+    scVideoIdleWake();
+    scVideoSay('The player would not open ' + rung.label + ' here - reading it instead…');
+    var job = null;
+    try{
+      job = scFetchBytes(rung.url, size || cap, function(loaded, total){
+        var pct = total ? Math.round((loaded / total) * 100) : 0;
+        scVideoSay('Reading ' + rung.label + '…' + (pct > 0 ? ' ' + pct + '%' : ''));
+      }, 4);
+    }catch(_eRes){ job = null; }
+    if(!job){ scVideoSpin(false); return false; }
+    Promise.resolve(job).then(function(buf){
+      // A CLOSED TAB OR A SIZE CHANGED UNDER THE READ. The bytes are for a picture that
+      // is no longer the one on the screen.
+      if(!scVideoState.open || scVideoState.rung !== rung) return;
+      if(!buf || !buf.byteLength){ scVideoRescueDown(rung, 'it came back empty'); return; }
+      var type = String(rung.mime || 'video/mp4').split(';')[0].trim() || 'video/mp4';
+      try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev){}
+      var blob = null;
+      try{ blob = URL.createObjectURL(new Blob([buf], { type: type })); }catch(_eBlob){ blob = null; }
+      if(!blob){ scVideoRescueDown(rung, 'it could not be held in memory'); return; }
+      scVideoState.blobUrl = blob;
+      scVideoState.drops = 0;                 // nothing has been stepped down from
+      scVideoFoot('This size would not open from the player here, so it was read instead (' +
+        rung.label + ').');
+      scVideoAttach(blob, 'blob', true);
+    }).catch(function(){ scVideoRescueDown(rung, 'it could not be read'); });
+    return true;
+  }
+  // The bytes did not come either. The size is given up on the way it used to be, one
+  // rung down, and this height is not read again for this video.
+  function scVideoRescueDown(rung, why){
+    if(!scVideoState.open) return;
+    scVideoSpin(false);
+    scVideoFoot((rung ? rung.label : 'That size') + ' could not be read here either (' +
+      why + '). Stepping down.');
+    if(scVideoState.rung === rung) scVideoFailed(true);
   }
 
   function scVideoRead(){
@@ -21693,6 +21822,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // the whole session, so the first video that could not open 1080p here made every
     // song after it open on 360p. It belongs to the video it happened on.
     scVideoState.deadH = {};
+    scVideoState.rescueH = {};
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
       // ONLY THE LOAD THAT IS STILL CURRENT MAY UNLOCK THE TAB. A stale answer used
@@ -23154,7 +23284,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.2';
+  const APP_VERSION = '85.3.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23864,6 +23994,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.3.3', date: 'November 19, 2026', title: 'The sharp size is read when the player refuses it, and HD+ sharpens instead of washing', items: [
+    '[FULL] A sharp size the player refuses is now read by the app itself and played from memory, so 1080p opens instead of falling to 360p.',
+    '[FULL] HD+ is a real edge sharpen now instead of a contrast wash, so a smaller size reads sharper on a big screen.',
+    '[FULL] A size link that carries a range keeps the rest of its query, so the size it names can open.'
+  ] },
       { version: '85.3.2', date: 'November 19, 2026', title: 'The real size ladder, one step at a time, and the library opens on Albums', items: [
     '[FULL] Music video quality lists the real sizes - 144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2K and 4K - and 1080p actually plays instead of falling to 360p.',
     '[FULL] A size the phone refuses is no longer remembered against every song, and a refusal steps down one size at a time instead of jumping to the smallest.',
