@@ -19876,6 +19876,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.4 - AN ERROR FOR A SOURCE THAT IS GONE IS NOT A REFUSAL ─────────────
+  // WHAT 85.2.3 STILL GOT WRONG. Every `error` event was read as the size being
+  // refused. A size change aborts the load that was running, and that abort can
+  // arrive as an `error` **after** the new source is attached and the element has
+  // already cleared `media.error` - so the handler ran with no `MediaError` at
+  // all, and walking the ladder on it took the picture 1080p to 720p to 360p on
+  // the click that asked for 1080p. That is the flip-flop the owner kept seeing.
+  //
+  // AN ERROR IS ONLY AN ERROR IF THE ELEMENT SAYS SO. A failure now needs a real
+  // `MediaError` on the element, and it has to belong to the source that is
+  // attached: an event for a source that has already been replaced is dropped.
+  // The one caller allowed to act without a `MediaError` is the silent-source
+  // watch, which passes `true` because it is looking at the element directly. If
+  // a size is refused for real, the footer names the size and the codec that
+  // refused it, so the next report says exactly which row this phone could not
+  // open instead of only which one it landed on.
   // ─── 85.2.3 - A BUSY SIGNAL IS NOT A REFUSAL ─────────────────────────────────
   // WHAT 85.2.2 STILL GOT WRONG. The tab could fall from 1080p to 360p for two
   // reasons that are not a refusal. One: a dropped connection arrives as a media
@@ -19981,7 +19997,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0, retries: 0
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0, retries: 0, srcNow: ''
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -20900,7 +20916,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ buffered = (v.buffered && v.buffered.length) ? (Number(v.buffered.end(v.buffered.length - 1)) || 0) : 0; }catch(_eBuf){ buffered = 0; }
       if(buffered > 0.05) return;
       if(Number(v.networkState) === 2) return;      // still fetching: it is not dead
-      scVideoFailed();
+      scVideoFailed(true);                          // nothing came, so the size is dead
     }, ms);
   }
   // The deadline for a silent source: the base, plus a little for every megabyte
@@ -20936,6 +20952,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // The source is replaced rather than cleared first: a cleared element is a
     // black frame where the picture was, and a size change should not blink.
     v.src = src;
+    // The source this tab is on, so a late error from the one before it can be
+    // told apart from a refusal of this one.
+    try{ scVideoState.srcNow = String(v.src || src); }catch(_eNowSrc){ scVideoState.srcNow = String(src || ''); }
     v.muted = (mode !== 'video');          // a paired track is the sound in aux mode
     try{ v.volume = 1; }catch(_eVol){}
     scVideoMuteOthers();
@@ -21134,12 +21153,21 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(scVideoState.tick){ clearInterval(scVideoState.tick); scVideoState.tick = null; }
   }
 
-  function scVideoFailed(){
+  function scVideoFailed(dead){
     var v = scVideoEl('scVideoEl');
+    // The size that is failing, kept before the road changes it: the footer has to
+    // name the row this phone refused, not the one it landed on.
+    var from = scVideoState.rung;
     var why = 'the element could not play this source';
     scVideoWatchStop();
+    var err = null;
+    try{ err = v && v.error; }catch(_eNone){ err = null; }
+    // NO MEDIAERROR, NO REFUSAL. An `error` event that carries nothing is one for
+    // a source this tab has already replaced - the abort of the load a size change
+    // made - and acting on it is what pulled a 1080p click down to 360p. Only the
+    // silent-source watch may act without one, and it says so.
+    if(!err && dead !== true) return;
     try{
-      var err = v && v.error;
       if(err && err.code === 2) why = 'the stream dropped (network)';
       else if(err && err.code === 3) why = 'the phone could not decode this stream';
       else if(err && err.code === 4) why = 'this source is not a video the element can open';
@@ -21150,6 +21178,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var fresh = 0;
     try{ fresh = (Date.now ? Date.now() : new Date().getTime()) - (Number(scVideoState.swapAt) || 0); }catch(_eNow){}
     if(fresh < 900 && why === 'the read was aborted') return;
+    // AND NOT FOR A SOURCE THAT IS ALREADY GONE. Two attaches in quick succession
+    // leave the old one's error behind; if the element is no longer on the source
+    // this tab attached, the event is history.
+    var cur = '';
+    try{ cur = String((v && (v.currentSrc || v.src)) || ''); }catch(_eCur){ cur = ''; }
+    if(scVideoState.srcNow && cur && cur !== scVideoState.srcNow) return;
     // A DROPPED CONNECTION IS NOT A WRONG SIZE. Code 2 is the network letting go
     // for a moment, and walking down the ladder on it is how a 1080p picture ends
     // up on the 360p row over a signal that was only busy. The same source is
@@ -21196,7 +21230,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoApplyRung(def, true);
       // On the footer, not the transient line: a playing picture clears that one
       // the moment it starts, and this fallback is the thing worth knowing.
-      scVideoFoot('This size did not play here (' + why + '). Now at ' + def.label + '.');
+        scVideoFoot('This size did not play here (' + why + ') - ' +
+        (from ? from.label + ' ' + from.codec : 'that size') +
+        '. Now at ' + def.label + '.');
       return;
     }
     if(scVideoState.via === 'direct'){
@@ -22648,7 +22684,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.3';
+  const APP_VERSION = '85.2.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23358,6 +23394,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.4', date: 'November 18, 2026', title: 'An error for a source that is gone is not a refusal', items: [
+    '[FULL] Clicking 1080p no longer slides back to 360p. A size change cancels the load that was running, and that cancellation can arrive as an error after the new size has already started - the tab read it as the new size being refused and walked one size down, twice, so a tap on 1080p ended on the 360p row. An error now counts only when the phone reports a real media error on the size that is actually playing.',
+    '[FULL] When a size really is refused, the footer names the size and the codec the phone could not open, so a smaller picture is never a mystery.',
+    '[FULL] A picture that is still fetching is not a picture that failed: a size that is loading, or that has buffered anything, keeps its time and its size instead of losing them.'
+  ] },
       { version: '85.2.3', date: 'November 18, 2026', title: 'A busy signal is not a refusal', items: [
     '[FULL] The music video stays on the size you asked for. A dropped connection used to be treated as the size being wrong, so a signal that was busy for a second could take a 1080p picture down to 360p. The same size now starts again at the second it was on, and only a phone that actually refuses the picture steps down.',
     '[FULL] A big size is given the time it needs. The check that watched for a size that never started called it at nine seconds, which is the smallest row budget - a 1080p picture was given up while it was still fetching its bytes. The wait now grows with the size, and a picture that is still loading, or that has already buffered something, is left alone.',
