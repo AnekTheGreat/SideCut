@@ -1,5 +1,236 @@
 # SideCut — repository memory
 
+## 85.3.2 (November 19, 2026 · 4:05 PM EST): the size ladder is the ladder, the resolver is always asked, and the library opens on Albums
+
+**Three complaints about the music video tab, and a request about the library.** The
+size list was not the ladder - it offered whatever height a row happened to report
+and hid everything under 360p, so 144p and 240p could not be picked at all and an
+odd encode put a number in the list nobody compares. The picture kept landing on
+360p "every time". A tap on the film still reached a play/pause. And the library
+opened on Playlists.
+
+**The ladder is the ladder now.** Every row height is read as the nearest step of
+144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2K (2048) and 4K (2160), every one of
+those the video has is listed, and 2K and 4K carry their own names. The filter that
+hid the rows under 360p is gone: a viewer who wants 144p can pick it. FULL HD is
+still the default and a hand-picked size is still remembered.
+
+**Why it was 360p every time.** The 85.2.6 dead-height memory was session-wide: the
+first video that refused 1080p on a phone wrote that height down, and every song
+after it landed on the one-stream 360p row without ever asking again. The memory
+belongs to the video it happened on now - it is cleared by `scVideoLoad`, marked in
+the list for that video, and forgotten by the next song. And the fallback road is no
+longer a cliff: a refusal used to step down once and then jump to the smallest row
+with its own sound, so the 480p picture was never offered; each refusal now steps to
+the rung directly under the one that failed (up to four), and `playing` resets the
+count.
+
+**The resolver is asked for every video.** 85.3.1 asked `scYtPlayer` only when the
+tab's own two-client call came back under 1080p. So a call that produced a 1080p row
+from a client whose address this phone then refused never consulted the resolver that
+the converter, the downloader and Streaming actually play with - it just walked down
+to 360p. The resolver is asked unconditionally now, one request per video id (kept in
+`scVideoState.app`), and its rows are seated first at their own height, so a tie at
+1080p is won by the address that is measured to open. Its `snd` still fills the
+paired voice.
+
+**A tap only opens the bar.** `scVideoPictureTap` brings the mini bar back and does
+nothing else; it no longer starts a stopped film either. Play and pause are the round
+button and the big drawn disc over a still.
+
+**The library opens on Albums.** `libraryMode` starts at `albums` and the Boot view
+setting (`sandboxDefaultView`, the one settings pass reads) defaults to it as well,
+including its reset. The Albums tab, the Playlists tab and the split Library pill are
+untouched, so Playlists is one tap away.
+
+`dev/build-8532.py` rebuilds `dev/video-8532.js` from `dev/video-8531.js` with each
+edit asserted to appear exactly once. `dev/patch-8532.py` replaces the module slice
+(from the 85.3.2 banner to the shelf comment that follows it), opens the library on
+Albums, then moves the version line, the cache name, one notes entry and
+`updates.json` to 85.3.2. It refuses to finish if the module carries `scVideoUrl`
+again or if the 85.2.1 sound flag is read fewer than five times.
+
+Bundles on this release, both channels rebuilt: `ota/updates.json` **1301386 bytes**,
+`ota-play/updates.json` **1301399 bytes**. Page-only: no native change, so the APK is
+not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `dev/check-8532.cjs` passes **213 assertions, 0 failed**, the 85.2.5-85.3.1
+sets included. The ones this release is about: an answer of 396/270/180/2048 comes
+back as the ladder `2048,360,240,144` with the labels `2K,360p,240p,144p`; every
+standard height is its own step; the size card carries `144`, `240` and `2K`; a
+client answer that already has 1080p still asks the resolver once and opens on the
+resolver's own 1080p address; a refused 2160p steps to 1440p and the next refusal to
+the 1080p paired row instead of the one-stream row; a height refused on one video is
+marked `did not play here` for that video and the next video opens on 1080p again
+with an empty dead-height map; and a tap on a stopped picture leaves it stopped while
+the round button starts and pauses it.
+`python3 dev/patch-8532.py` applied cleanly and a second run prints `already on the
+page`; the module on the page is byte-identical to `dev/video-8532.js`, all 7 inline
+scripts of the page parse, `function scVideoUrl` is absent, `takeVideo` appears once
+and the sound flag is still read in all five places; `libraryMode` and the boot view
+both read `albums`. Both OTA channels reached their fixed point and verify with
+`--check` (3 notes on the full channel, 1 on Play, which filters the `[FULL]` lines).
+
+Not checked: no live player call from this sandbox - the host answers
+`LOGIN_REQUIRED` to a datacenter address - so what is proven is that the resolver's
+rows win a tie at their height and reach the ladder, not that a particular video's
+1080p address opens on a particular phone. The ladder, the stepping and the tap were
+proven against a stubbed DOM; the size card, the bar and the Albums landing were not
+rendered on a screen, and no phone drove them. Whether the library opens on Albums on
+a device whose stored Boot view is Playlists is unproven: an existing install that
+chose Playlists keeps it, which is the setting doing its job.
+
+## 85.3.1 (November 19, 2026 · 3:38 PM EST): the sizes come from the resolver that works, and one pass to sharpen
+
+**85.3.0 answered the 360p lock by guessing.** It gave the video tab a second cipher
+decoder and a WebM-only path, in the tab's own private player call. The app already
+had a resolver that is measured - `scYtPlayer`, the call the converter, the
+downloader and Streaming all use - and the tab was not using it. Two cipher decoders
+in one page is two things to keep right, and only one of them was ever tested
+against a live player.
+
+**The sizes come from there now.** `scYtPlayer` gathers the picture rows of the same
+answer (`videos`, decrypted by its own `deco`, with the audio row that pairs them as
+`snd`) and returns them beside what it already returned - nothing its existing
+callers read changed. When the tab's two-client call does not produce FULL HD,
+`scVideoAppRows` asks it, the rows are seated with the same `take()` the tab already
+uses, and the ladder is rebuilt once (`assemble()`). Its own answer wins when it
+already has 1080p, so the resolver is only asked for the case it was added for.
+
+**What 85.3.0 added for the guess is gone.** The module's `scVideoUrl` cipher
+decoder, the `dropped` counter with its `noUrl` map, and the size-card line about
+rows that "came without a link" are removed; the cipher work lives in `scYtPlayer`
+alone. The VP8 label went with the path that needed it. What stays is what the
+release was actually about: the tap that opens the mini bar instead of pausing, the
+portrait rest, FULL HD as the default, the dead-height memory, and the one-sound
+lock.
+
+**One pass to sharpen.** The upscaler was four full-canvas draws and two offscreen
+buffers for an unsharp mask. The resample is the part a low-resolution film needs;
+the mask is now one clarity pass - the same frame, `contrast(1.5) saturate(1.06)`,
+laid over itself at 0.45 alpha through `overlay` - so a frame costs two draws and
+holds nothing between frames. The loop, the pref, the HD+ button and the context
+guard are unchanged.
+
+`dev/patch-8531.py` replaces the module as one slice (from the 85.3.1 banner to the
+shelf comment that follows it) with `dev/video-8531.js`, edits `scYtPlayer` (three
+anchors: the pool declaration, the row intake, the answer), then moves the version
+line, the cache name, one notes entry and `updates.json` to 85.3.1. It refuses to
+finish if the module still carries `scVideoUrl`, so the copy cannot come back.
+
+Bundles on this release: `ota/updates.json` 1305635 bytes, `ota-play/updates.json`
+1305649 bytes. Page-only: no native change, so the APK is not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `dev/check-8531.cjs` passes 204 assertions, the 85.2.7 set included with
+85.3.0's tap and upscaler assertions. The ones this release is about: a client answer
+with only the muxed 360p row asks the resolver once, its 1440/1080 rows reach the
+ladder (`1440,1080,360`), the picture opens on the 1080p H.264 row, the resolver's
+`snd` becomes the paired voice, and the header says `1080p`; an answer that already
+carries 1080p never asks the resolver; a WebM 1080p row from the tab's own call is
+still seated as VP9. The upscaler is now one canvas: a base draw, one `overlay`
+clarity draw, three context calls in total, no second canvas, and the context left at
+alpha 1, `source-over`, `filter: none`.
+`python3 dev/patch-8531.py --check` exits 1 before and 0 after, a second run prints
+`already on the page`, the module on the page is byte-identical to
+`dev/video-8531.js`, all 7 inline scripts parse, `function scVideoUrl` is absent from
+the page, `takeVideo` and `videos: videoRows` appear once each, and the sound flag is
+still read in all five places. Bundles reached their fixed point and both channels
+verify with `--check`.
+
+Not checked: the resolver fallback is proven against a stubbed `scYtPlayer`, not a
+live player - so what is proven is that a weak answer reaches the app resolver and
+its rows become the ladder, not that a particular video's 1080p row will play on a
+particular phone. The clarity pass was proven as draw calls against a fake 2D
+context; how it reads on a screen, and what it costs per frame on a real device, is
+unmeasured. No phone and no browser session drove the tab, so the tap, the portrait
+rest and the canvas are still unrendered here.
+## 85.3.0 (November 19, 2026 · 3:24 PM EST): a tap opens the bar, every size is reachable, and the picture is upscaled
+
+**Three reports from the same tab, and only one of them was the ladder.** A tap on
+the film stopped it. The size list was stuck on 360p and could not be made to move.
+And the picture stayed soft at whatever size it did reach.
+
+**A tap on the picture was a play/pause.** It went to the same `scVideoTap` the round
+button uses, so looking at the controls - the only thing a tap on a film usually
+means - stopped the song's video. In portrait there was nowhere else for a tap to
+go, because the transport never left the screen there. The mini bar now steps aside
+while the film runs in portrait as well as on the glass (`SC_VQ_IDLE_MS_PORTRAIT`,
+3.2s against the wide layout's 2s), a tap anywhere on the picture calls
+`scVideoPictureTap`, which puts the bar back and does nothing else, and play/pause
+belongs to the two round buttons. A *stopped* picture still starts on a tap, because
+that is what the big drawn button is asking for; a running one is never stopped by
+one. The header stays in portrait while the bar rests - back, sizes and close are
+not the film.
+
+**The size list was one size long.** `take()` seated only rows that carried a plain
+`url` and only `mp4` ones. A row that the player protects arrives as
+`signatureCipher` (url + sp + s) with no `url` at all, and it was dropped without a
+word before the ladder ever saw it; on a typical answer the only row left is the
+muxed progressive 360p one. That is exactly a list that "does not work": one size on
+it, the chip never moves, and every click is the size already playing.
+`scVideoUrl` now opens a cipher the way the converter's `deco` does, WebM rows are
+seated too (VP9/AV1 in WebM often exist where the MP4 rows stop, and the element
+still decides what it can play), and a row that cannot be opened at all is counted
+once per itag in `scVideoState.dropped` and named in the size card instead of
+vanishing. FULL HD stays the default and a hand-picked size is still remembered.
+
+**And the picture is upscaled.** Stretching a 480p or 720p film to a phone's screen
+is the softest resize there is. HD+ (on by default, stored in `scVideoUpscale`, in
+the mini bar) draws each frame into a canvas that is already the stage's pixel grid
+(capped at 2x DPR), resamples it with `imageSmoothingQuality: 'high'`, and adds an
+unsharp pass: the frame, a blurred copy, their difference, and that difference added
+back with `lighter`. Flat areas are untouched, edges are firmer. The loop runs on
+`requestVideoFrameCallback` where the phone offers it (rAF otherwise) and stops on
+pause, buffer, end and close. A canvas that will not hand over a 2D context is not
+used at all - the tab keeps the element on screen rather than hiding it behind a
+black stage. **This is a resample and a local-contrast sharpen, not a neural
+network**: no model ships with the page and nothing is downloaded to run it.
+
+`dev/patch-8530.py` replaces the module as one slice (from the 85.3.0 banner to the
+shelf comment that follows it) with `dev/video-8530.js`, then moves the version line,
+the cache name, one new notes entry and `updates.json` to 85.3.0. It slices every
+run, so a later module edit reaches the page; a second run with the same module is a
+no-op.
+
+Bundles on this release: `ota/updates.json` 1305261 bytes, `ota-play/updates.json`
+1305275 bytes. Page-only: no native change, so the APK is not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `dev/check-8530.cjs` passes 204 assertions, the 170 of 85.2.7 included.
+The ones this release is about: a click on a playing picture leaves it playing and
+leaves the bar up; with the bar asleep, the same click brings it back and still does
+not pause; a stopped picture starts on it; the round button is still the play/pause;
+the bar steps aside in portrait after its deadline and a wake reports that it was
+away. `scVideoUrl` turns `signatureCipher` into a whole address (custom `sp` kept, a
+plain `url` untouched, neither one empty), a ladder whose 1080p and 720p rows exist
+only as ciphers comes back `1080,720,360` and opens on the ciphered 1080p row with
+the header saying so, a WebM 1080p row is seated as VP9, and a row with no address
+is counted once (not once per client) and named in the size card. HD+ is on with an
+empty store, its canvas is in the stage under the picture and hidden while a cover
+is up, the button toggles it off and back with the choice stored, a frame is drawn at
+the stage's pixel grid (400x300 from a 1920x1080 frame), the base draw plus a
+`lighter` pass from a `difference` buffer are made, and the canvas is left at alpha 1
+and `source-over` for the next frame.
+`python3 dev/patch-8530.py --check` exits 1 before and 0 after, a second run prints
+`already on the page`, all 7 inline scripts of the patched page parse, the module on
+the page is byte-identical to `dev/video-8530.js`, the HD+ button and the canvas each
+appear once, and the sound flag is still read in all five places. Bundles reached
+their fixed point and both channels verify with `--check`.
+
+Not checked: no phone, and no browser session drove this screen. The tap, the idle
+fade and the canvas were never rendered - the 3.2s portrait rest and the letterboxed
+canvas are CSS and geometry that have not been looked at. The upscaler was proven as
+draw calls against a fake 2D context, not as a sharper frame on a screen; its cost
+per frame on a real phone (four full-canvas draws) is unmeasured. And the 360p lock
+was answered from the code - a ciphered row has no `url` and was dropped - but not
+against a live player call, which this sandbox cannot make: if the list is still one
+size long, the row itself is being refused, and the size card now says how many rows
+arrived without a link the app can open.
 ## 85.2.7 (November 19, 2026 · 8:54 AM EDT): the song on the screen is the song in the picture, and a way back
 
 **Two reports, and the first one was not the ladder.** The tab could show one song's

@@ -8653,7 +8653,9 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   };
   let hiddenUnsorted = false; // whether the Unsorted tab is hidden
   let currentSort = 'default'; // default | alpha | artist | genre | recent
-  let libraryMode = 'playlists'; // 'playlists' | 'albums'
+  // 85.3.2 - THE LIBRARY OPENS ON ALBUMS. Playlists is one tap away, on the
+  // Playlists tab and on the other half of the Library pill.
+  let libraryMode = 'albums'; // 'playlists' | 'albums'
   let reorderMode = false;
 let albumReorderTarget = null; // album name when reordering songs within an album card
   let queue = [];          // track ids, current playback order
@@ -11173,7 +11175,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let sandboxCompactHeader = false;
   let sandboxBigArt = false;
   let sandboxShowAlbum = false;
-  let sandboxDefaultView = 'playlists';
+  let sandboxDefaultView = 'albums';
   // 70.0.5: four items - the add-songs pill left the dock for the header +.
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'studioBtn']; // strip items in default order
   let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
@@ -12151,8 +12153,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     dbPut('meta', { key: 'homeBubbleSize', value: 100 });
     dbPut('meta', { key: 'homeBubbleSizes', value: {} });
     dbPut('meta', { key: 'homePanelHeight', value: null });
-    sandboxDefaultView = 'playlists';
-    dbPut('meta', { key: 'sandboxDefaultView', value: 'playlists' });
+    sandboxDefaultView = 'albums';
+    dbPut('meta', { key: 'sandboxDefaultView', value: 'albums' });
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -19876,189 +19878,38 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.2.7 - THE SONG ON THE SCREEN IS THE SONG IN THE PICTURE, AND A WAY BACK ─
-  // TWO REPORTS, AND THE FIRST ONE IS NOT THE LADDER AND NOT THE SIZES. The tab
-  // could end up showing one song's film while another song played, and then stay
-  // there for the rest of that song.
+  // ─── 85.3.2 - THE LADDER IS THE LADDER, AND THE RESOLVER IS ALWAYS ASKED ───────
+  // THREE REPORTS, AND EACH ONE HAD A CAUSE IN THE CODE.
   //
-  // A VIDEO IS FOUND IN TWO ROUND TRIPS. The search answers, then the player
-  // answers, and the queue can move in between - a song that ends while the tab is
-  // looking for its film hands over to the next one. If the first song's answer
-  // arrived after the second song had started, it loaded anyway. And because the
-  // tab had already recorded the *new* song as the one it was on, the tick saw no
-  // change to follow and left the old film on the screen. That is exactly how a
-  // music video tab shows something that is not the song you are on.
+  // THE LIST WAS NOT A LADDER. It offered whatever height a row happened to report
+  // and hid everything under 360p, so 144p and 240p could not be picked at all and
+  // an encode with an odd height put a number in the list that is not a size anyone
+  // compares. Every height is now read as the nearest one of 144p, 240p, 360p, 480p,
+  // 720p, 1080p, 1440p, 2K and 4K, every one of those the video has is listed, and
+  // 2K and 4K say their own names.
   //
-  // THAT ANSWER IS NOW HISTORY. Every start carries a number (`startSeq`) and the
-  // song's key; when a lookup comes back, the tab asks whether that number is still
-  // the current one AND whether that song is still the song being played. If either
-  // moved, the answer is dropped and the tick's follow loads the film for the song
-  // that is actually on. Closing the tab bumps the same number, so a lookup that
-  // lands after the tab is gone cannot attach a source to a page with no picture on
-  // it - and, on a size with sound, cannot hold the song with it either.
+  // 360p WAS EVERY VIDEO AFTER THE FIRST. One refused height was written into a
+  // session-wide memory, so the first video that could not open 1080p on this phone
+  // taught the tab to stop asking - every song after it opened on the one-stream row
+  // and stayed there. The memory is per video now: a size the phone refused is not a
+  // verdict on the next song, and the list still marks it for the video it happened
+  // on.
   //
-  // AND A WAY BACK. The only exit was a cross at the far end of the header, which on
-  // a phone is the one corner a thumb does not reach. A back arrow now leads the
-  // row, on the glass in landscape too, and it leaves the tab the same way the close
-  // cross does: the song picks up at the second the picture was on.
-  // ─── 85.2.6 - THE PICTURE IS WHERE THE SONG IS, AND A SONG WITHOUT ONE HAS A COVER ─
-  // FOUR REPORTS, AND NOT ONE OF THEM WAS THE LADDER. The size list offered rows
-  // this phone cannot open, and offered the same row again for the next song after
-  // it had already refused it - so "random qualities that do not work" was true on
-  // both halves. The clip opened at the top of the file rather than at the second
-  // the song is on. And the tab stayed on the song it was opened for: the queue
-  // moved on, the film did not.
+  // AND THE FALLBACK WAS A CLIFF. A refusal stepped down once and then jumped to the
+  // smallest row that carries its own sound, so 1080p refused was 720p and 720p
+  // refused was 360p - the 480p picture was never offered. Each refusal now steps to
+  // the rung directly under the one that failed.
   //
-  // THE LIST ONLY OFFERS WHAT PLAYS. A height this phone has refused is remembered
-  // for the session, marked in the list, and never landed on automatically again; a
-  // height whose only row is a codec the element cannot claim is marked too.
-  // Neither is hidden - a hand may still try it - but the default stops being a
-  // size that does not work, which is the whole complaint. Nothing under 360p is
-  // offered at all unless it is the only thing the video has.
+  // THE RESOLVER IS ASKED FOR EVERY VIDEO. 85.3.1 asked `scYtPlayer` only when the
+  // tab's own two-client call came back under 1080p - so a call that produced a
+  // 1080p row from a client whose address this phone then refused never consulted the
+  // resolver, and fell down the ladder to 360p. The resolver is the call the
+  // converter, the downloader and Streaming play with, so its rows are seated first
+  // at their own height and the answer is kept per video.
   //
-  // THE PICTURE SKIPS TO THE SONG. A clip opens on the second the song is on, in
-  // every mode, and the footer says which second that was. A song that moves on
-  // takes the picture with it: the tab follows the queue, opens the new song's own
-  // video on that song's second, and walks its own results for it.
-  //
-  // A SONG WITH NO VIDEO HAS A COVER. Where there is nothing to play - a file the
-  // search cannot match, or a clip the player cannot resolve - the stage shows the
-  // track's own art instead of a black rectangle, the song is the sound, and the
-  // tab keeps following the queue from there.
-  // ─── 85.2.5 - THE CLIP HAS TO BE THIS SONG, AND HALF A FILE IS NOT A SOURCE ─
-  // TWO REPORTS, ONE ROOT EACH. The tab showed someone else's clip for a song,
-  // and it kept landing on 360p. The first was the catalogue: a song that carries
-  // a video id was played without ever asking whether that clip was the same
-  // recording - a live take, a remix, or another song entirely went on screen
-  // with nothing to say so, and NEXT was hidden because there was only one
-  // candidate. The second is the source: a row whose URL carries its own
-  // `range` is half a file, and an element that then asks for its own ranges
-  // cannot open it - which is a refusal that looks exactly like a phone that
-  // cannot decode a sharp size, and lands the picture on the one-stream row.
-  //
-  // THIS SONG, OR ANOTHER SEARCH. A catalogue clip whose length is far from the
-  // song it was opened for (more than twenty seconds and more than a tenth) is
-  // checked against a search by artist and title before it is trusted; the search
-  // is ranked by length, the result becomes the candidate list, and NEXT walks
-  // it. A clip that matches is played exactly as before.
-  //
-  // THE RANGE IS REMOVED. Every video and audio URL is stripped of its `range`
-  // parameter before it reaches an element, so the element can ask for the bytes
-  // it wants. The size list also says which build it is, because two tabs that
-  // look the same can be two different pages after an update.
-  // ─── 85.2.4 - AN ERROR FOR A SOURCE THAT IS GONE IS NOT A REFUSAL ─────────────
-  // WHAT 85.2.3 STILL GOT WRONG. Every `error` event was read as the size being
-  // refused. A size change aborts the load that was running, and that abort can
-  // arrive as an `error` **after** the new source is attached and the element has
-  // already cleared `media.error` - so the handler ran with no `MediaError` at
-  // all, and walking the ladder on it took the picture 1080p to 720p to 360p on
-  // the click that asked for 1080p. That is the flip-flop the owner kept seeing.
-  //
-  // AN ERROR IS ONLY AN ERROR IF THE ELEMENT SAYS SO. A failure now needs a real
-  // `MediaError` on the element, and it has to belong to the source that is
-  // attached: an event for a source that has already been replaced is dropped.
-  // The one caller allowed to act without a `MediaError` is the silent-source
-  // watch, which passes `true` because it is looking at the element directly. If
-  // a size is refused for real, the footer names the size and the codec that
-  // refused it, so the next report says exactly which row this phone could not
-  // open instead of only which one it landed on.
-  // ─── 85.2.3 - A BUSY SIGNAL IS NOT A REFUSAL ─────────────────────────────────
-  // WHAT 85.2.2 STILL GOT WRONG. The tab could fall from 1080p to 360p for two
-  // reasons that are not a refusal. One: a dropped connection arrives as a media
-  // error like any other, and the road treated it as the size being wrong - so a
-  // signal that was busy for a second demoted the picture, and the step after the
-  // first demotion is the 360p row. Two: the nine-second "nothing started" watch
-  // was written for the smallest row and called a 1080p picture dead while it was
-  // still fetching the bytes it needs, so a slow start walked the ladder down.
-  //
-  // A DROP RETRIES, A REFUSAL STEPS DOWN. A network error - or an abort on a
-  // source that has been attached for a while - now restarts the same source at
-  // the same second, once, and never changes the size; only the phone actually
-  // refusing the picture (codes 3 and 4) walks one step down. The watch is
-  // scaled to the size and asks whether bytes are still arriving: a source that
-  // is buffering, or that the element is still loading, gets more time instead of
-  // a smaller picture. 1080p stays 1080p through a bad minute, which is what the
-  // default is worth.
-  // ─── 85.2.2 - FULL HD BY DEFAULT, AND ONE STEP DOWN ────────────────────────
-  // WHAT 85.2.1 LEFT UNFINISHED. The tab opened on AUTO, and AUTO is the best
-  // row that carries its own sound - which on most videos is the 360p
-  // progressive row a phone is handed. Every sharper size was in the list and
-  // nothing said so, so the first picture a viewer saw was the softest one the
-  // video had. The other half was a cliff: a sharp size this phone refused fell
-  // straight to that same 360p row, so one refused 1080p cost the 720p picture
-  // as well.
-  //
-  // FULL HD UNLESS YOU SAY OTHERWISE. A viewer who has never opened the list
-  // gets 1080p - the sharpest size that still plays on a phone - or the largest
-  // size under it when a video has no 1080p, with the list saying which. AUTO is
-  // still a choice, a size that was chosen is still kept for the next video, and
-  // a refused size steps down one size before it gives up: 1080p refused becomes
-  // 720p, not 360p. The 85.2.1 sound lock is untouched - the picture is the
-  // clock, its own voice follows it, and only one thing is audible at a time.
-  // ─── 85.2.1 - ONE SOUND, AND THE FRAME IS THE CLOCK ─────────────────────────
-  // WHAT 85.2.0 LEFT WRONG. A high size is the video's picture plus the same
-  // video's own soundtrack in a second element, and that element was allowed to
-  // start the moment it was ready - which is usually before the first frame. The
-  // head start it took, it kept: a few tenths of a second of sound over a picture
-  // that never caught up, because 85.2.0 only pulled it back when it was more than
-  // half a second out. Two clocks running a fraction of a percent apart do the
-  // rest. What you heard was the video's sound, and it was late or early, and it
-  // stayed that way.
-  //
-  // ONE SOUND, AND IT IS THE PICTURE'S. Three things can be heard here - the
-  // picture, its paired soundtrack, and the song - and exactly one of them is
-  // audible at a time. The tab says which one owns the sound in a flag the rest of
-  // the app can read, because the song was being restarted underneath the film by
-  // the app's own background recovery: the thirty-second heartbeat brings a paused
-  // song back, and so does a return from the background, and neither knew the
-  // video was playing. A song that starts under the film is stopped again.
-  //
-  // THE FRAME IS THE CLOCK, AND THE VOICE FOLLOWS IT. The soundtrack waits for the
-  // picture to be playing, starts on the picture's second, is held to a tenth of a
-  // second by trimming its rate rather than jumping it back, and is jumped only on
-  // a real gap - a buffer, a seek, a size change. A picture that pauses or stops
-  // to think takes its voice with it, so the sound cannot run on ahead of a still
-  // frame. Native seeks, the progress line and a size change all move both.
-  //
-  // WHAT 85.2.0 SHIPPED IS UNTOUCHED OTHERWISE: a size change holds its second,
-  // the picture is the clock in every size, a refused size falls back with a line
-  // saying which, the landscape transport steps aside after two seconds, and the
-  // progress line is a handle.
-  // WHAT 85.1.2 COULD NOT DO. A size change attached both the picture and the
-  // paired soundtrack at zero, and it asked the soundtrack to start there before
-  // that element had a duration - which a phone ignores. So the soundtrack began
-  // at 0:00 while the picture was two minutes in, the picture was then nudged
-  // onto that clock (85.1.2 made the soundtrack the clock), and the film - and
-  // the song that follows it out of the tab - restarted from the beginning.
-  //
-  // THE PICTURE IS THE CLOCK NOW. A second the element is not ready for is kept
-  // on the element and applied the moment it knows its own duration, for the
-  // picture and for its soundtrack both. The soundtrack is nudged onto the
-  // picture, never the other way round, because a backwards seek in the picture
-  // is the thing you can see. A change made while the picture is paused stays
-  // paused, and the swap no longer clears the element first, so a size change is
-  // not a black flash either.
-  //
-  // A SIZE THAT NEVER STARTS IS NOT A BLACK PANEL. If nothing has played nine
-  // seconds after a size is attached, the tab walks the same road a refusal
-  // takes: another codec at that height, then the best one-stream size, and the
-  // footer says which. A size the phone cannot open no longer forgets the size
-  // the owner chose.
-  //
-  // THE TRANSPORT STEPS ASIDE IN LANDSCAPE. Two seconds after the last touch the
-  // transport, the title row and the size chip fade off the glass, and a tap on
-  // the picture brings them back without stopping the film. The progress line is
-  // a handle: a two-centimetre touch area, a dot, and a drag to any second that
-  // moves the picture, its soundtrack and the song underneath together.
-  //
-  // WHAT THE LADDER AND THE ORIENTATION DID IN 85.1.2 IS UNTOUCHED. AUTO is still
-  // the best one-stream size, the choice is still remembered, a refused size still
-  // falls back with a line saying so, and the landscape button still turns the
-  // stage rather than the browser's own player.
-  //
-  // NOT CLAIMED: 4K is whatever the video gives and the phone decodes. Nothing is
-  // downloaded, nothing is kept, and no size above 64 MB is read into memory. A
-  // paired soundtrack is still two elements, so this is a lock, not a mux.
+  // A TAP ON THE PICTURE ONLY BRINGS THE BAR BACK. It no longer starts a stopped
+  // film either: play and pause are the round button and the big drawn button over a
+  // still, which is what the bar is for.
 
   var scVideoState = {
     open: false, busy: false, tick: null, cands: [], ci: 0,
@@ -20068,7 +19919,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
-    deadH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false
+    deadH: {}, app: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
+    fxOn: false, fxRaf: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -20077,6 +19929,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_IDLE_MS = 2000;                // the transport rests two seconds into landscape
   var SC_VQ_WATCH_MS = 9000;               // how long a silent source gets, before its weight
   var SC_VQ_WATCH_PER_MB = 300;            // and this much more for every megabyte it fetches
+  var SC_VQ_IDLE_MS_PORTRAIT = 3200;       // the mini bar steps aside in portrait too
+  var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
+  var SC_VFX_AMOUNT = 0.45;                // how much of the clarity pass is laid over the frame
+  // THE SIZES A VIDEO CAN HAVE. Whatever height a row reports is read as the nearest
+  // one of these, so the list is the ladder a viewer knows instead of a number the
+  // encode happened to land on.
+  var SC_VQ_STEPS = [144, 240, 360, 480, 720, 1080, 1440, 2048, 2160];
 
   function scVideoEl(id){ try{ return document.getElementById(id); }catch(_e){ return null; } }
 
@@ -20137,10 +19996,31 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoRungTag(h){
     h = Number(h) || 0;
     if(h >= 2160) return '4K';
-    if(h >= 1440) return '2K';
+    if(h >= 2048) return '2K';
+    if(h >= 1440) return 'QHD';
     if(h >= 1080) return 'FULL HD';
     if(h >= 720) return 'HD';
     return 'SD';
+  }
+  // THE SIZES HAVE NAMES. 144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2K and 4K are
+  // the ladder. A height that is not one of them is read as the nearest one that is,
+  // because a list of in-between numbers is a list nobody can compare.
+  function scVideoStd(h){
+    h = Number(h) || 0;
+    if(!h) return 0;
+    var best = SC_VQ_STEPS[0];
+    for(var i = 0; i < SC_VQ_STEPS.length; i++){
+      var s = SC_VQ_STEPS[i];
+      if(Math.abs(s - h) < Math.abs(best - h)) best = s;
+    }
+    return best;
+  }
+  function scVideoSizeLabel(h){
+    h = Number(h) || 0;
+    if(!h) return '';
+    if(h >= 2160) return '4K';
+    if(h >= 2048) return '2K';
+    return h + 'p';
   }
   // HALF A FILE IS NOT A SOURCE. A player row can carry its own `range` in the
   // URL, which is what the player asked for; handed to an element that then makes
@@ -20166,8 +20046,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoLadder(muxed, adaptive, snd){
     var byH = {};
     function seat(row, isMux){
-      var h = Number(row && row.h) || 0;
+      var raw = Number(row && row.h) || 0;
+      var h = scVideoStd(raw);
       if(!h || h < 144) return;
+      row.rawH = raw;
       var b = byH[h];
       if(!b){ b = byH[h] = { h: h, rows: [] }; }
       row.muxed = !!isMux;
@@ -20180,6 +20062,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var b = byH[k];
       b.rows.sort(function(x, y){
         if(!!x.muxed !== !!y.muxed) return (y.muxed ? 1 : 0) - (x.muxed ? 1 : 0);
+        // THE APP'S OWN RESOLVER WINS A TIE. It is the call the downloader and the
+        // converter play with, so an address from it is the one measured to open here.
+        if(!!x.app !== !!y.app) return (x.app ? 0 : 1) - (y.app ? 0 : 1);
         var c = scVideoCodecRank(x.mime) - scVideoCodecRank(y.mime);
         if(c) return c;
         return (Number(y.bits) || 0) - (Number(x.bits) || 0) || (Number(y.size) || 0) - (Number(x.size) || 0);
@@ -20196,7 +20081,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         alts.push({ url: b.rows[j].url, mime: b.rows[j].mime, size: b.rows[j].size });
       }
       rungs.push({
-        h: b.h, label: b.h + 'p', tag: scVideoRungTag(b.h),
+        h: b.h, label: scVideoSizeLabel(b.h), tag: scVideoRungTag(b.h),
         url: top.url, mime: top.mime, size: Number(top.size) || 0,
         muxed: !!top.muxed, codec: scVideoCodec(top.mime), alts: alts,
         audioUrl: top.muxed ? '' : (snd ? snd.url : ''),
@@ -20427,6 +20312,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scVideoBackdrop.sc-vwide.sc-vidle #scVideoQ{display:none}',
       '@media (orientation:landscape){#scVideoHead{padding-bottom:6px} #scVideoStage{border-radius:14px}',
       '#scVideoFoot{display:none} #scVideoSay{padding-bottom:52px} #scVideoBig{width:76px;height:76px}}',
+      // THE PICTURE IS UPSCALED. The frames are drawn into a canvas that is the
+      // stage's own pixel grid; the element underneath keeps playing but is not what
+      // is looked at while the sharpened copy is up.
+      '#scVideoFx{position:absolute;inset:0;width:100%;height:100%;display:none;background:#000;pointer-events:none;z-index:3}',
+      '#scVideoStage.sc-vfx #scVideoFx{display:block}',
+      '#scVideoStage.sc-vfx #scVideoEl{opacity:0}',
+      '#scVideoStage.sc-vcover #scVideoFx{display:none}',
+      '#scVideoBoost{width:34px;padding:0;font-size:9px;letter-spacing:.4px;font-weight:700}',
+      // THE MINI BAR STEPS ASIDE IN PORTRAIT TOO. A tap on the picture is what brings
+      // it back; the header - back, sizes, close - stays, because it is not the film.
+      '#scVideoBackdrop:not(.sc-vwide) #scVideoCtl{transition:opacity .3s ease,transform .3s ease}',
+      '#scVideoBackdrop.sc-vidle:not(.sc-vwide) #scVideoCtl{opacity:0;pointer-events:none;transform:translateY(10px)}',
       'body.sc-video-open{overflow:hidden}'
     ].join('');
     document.head.appendChild(st);
@@ -20447,6 +20344,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '<div id="scVideoStage">' +
         '<video id="scVideoEl" playsinline webkit-playsinline preload="auto"></video>' +
         '<audio id="scVideoAuxEl" preload="auto"></audio>' +
+        '<canvas id="scVideoFx" aria-hidden="true"></canvas>' +
         '<div id="scVideoCover" aria-hidden="true">' +
           '<div class="sv-cbg" id="scVideoCoverBg"></div>' +
           '<div class="sv-cwrap">' +
@@ -20467,12 +20365,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
           '<div id="scVideoProg" role="slider" tabindex="0" aria-label="Seek">' +
             '<div id="scVideoFill"></div><div id="scVideoThumb"></div></div>' +
           '<span id="scVideoClock">0:00 / 0:00</span>' +
+          '<button type="button" id="scVideoBoost" class="sv-mini" title="Upscale and sharpen the picture" aria-label="Upscaler" aria-pressed="false">HD+</button>' +
           '<button type="button" id="scVideoNext" class="sv-mini" title="Try the next search result" style="display:none;">NEXT</button>' +
           '<button type="button" id="scVideoLand" class="sv-mini sv-icon" title="Landscape" aria-label="Landscape">' + SC_VICON_LAND + '</button>' +
         '</div>' +
       '</div>' +
       '<div id="scVideoFoot"></div>';
     document.body.appendChild(d);
+    // THE SHARPER PATH IS THE ONE A FRESH TAB TAKES, and the frame loop is started the
+    // moment the picture starts rather than here - there is nothing to draw yet.
+    scVideoState.fxOn = scVideoFxOn();
+    scVideoFxCanvas();
+    scVideoFxApply();
 
     d.addEventListener('click', function(e){ if(e.target === d) scVideoClose(); });
     var c = scVideoEl('scVideoClose'); if(c) c.addEventListener('click', scVideoClose);
@@ -20481,6 +20385,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(bk) bk.addEventListener('click', function(e){ e.stopPropagation(); scVideoClose(); });
     var n = scVideoEl('scVideoNext'); if(n) n.addEventListener('click', function(e){ e.stopPropagation(); scVideoNext(); });
     var l = scVideoEl('scVideoLand'); if(l) l.addEventListener('click', function(e){ e.stopPropagation(); scVideoLandscape(); });
+    var bx = scVideoEl('scVideoBoost'); if(bx) bx.addEventListener('click', function(e){ e.stopPropagation(); scVideoFxToggle(); });
     var p = scVideoEl('scVideoPlay'); if(p) p.addEventListener('click', function(e){ e.stopPropagation(); scVideoTap(); });
     var b = scVideoEl('scVideoBig'); if(b) b.addEventListener('click', function(e){ e.stopPropagation(); scVideoTap(); });
     var chip = scVideoEl('scVideoChip'); if(chip) chip.addEventListener('click', function(e){ e.stopPropagation(); scVideoQualityToggle(); });
@@ -20500,12 +20405,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
           return;
         }
       }
-      // IN LANDSCAPE THE FIRST TAP BRINGS THE CONTROLS BACK. It does not also stop
-      // the film the controls were hiding - that is what the round button is for.
-      if(scVideoIdleWake()) return;
+      // A TAP ON THE PICTURE OPENS THE MINI BAR. It brings the transport back and does
+      // nothing else. It used to be a play/pause, which is how looking at the controls
+      // stopped the song's film.
       var q = scVideoEl('scVideoQ');
       if(q && q.classList.contains('on')){ scVideoQualityToggle(false); return; }
-      scVideoTap();
+      scVideoPictureTap();
     });
     // A touch anywhere wakes the transport; in landscape the two-second walk off
     // the glass starts again from that touch.
@@ -20518,20 +20423,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoState.blocked = false;
         scVideoWatchStop();
         scVideoBig(false); scVideoSpin(false); scVideoSay(''); scVideoBarState();
+        scVideoState.drops = 0;              // a picture that plays has used no steps
         if(scVideoState.audioMode === 'aux') scVideoAuxPlay();
+        scVideoFxStart();
         scVideoIdleArm();
       });
       // A PAUSED PICTURE IS A SILENT ONE. The soundtrack is its voice, so it stops
       // with the frame instead of running on over a still.
       v.addEventListener('pause', function(){
         scVideoBarState(); scVideoIdleWake();
+        scVideoFxStop();
         scVideoAuxPause();
         if(!v.ended && !scVideoState.blocked) scVideoBig(true);
       });
       // A PICTURE THAT IS THINKING IS SILENT TOO. The voice used to keep running
       // while the frame waited for bytes, so it pulled ahead and then had to be
       // dragged back - a stutter you could hear.
-      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoAuxPause(); });
+      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoFxStop(); scVideoAuxPause(); });
       v.addEventListener('stalled', function(){ scVideoSpin(true); scVideoAuxPause(); });
       // Any seek puts the voice on the frame's new second, however it was made.
       v.addEventListener('seeked', function(){ if(scVideoState.audioMode === 'aux') scVideoAuxAlign(); });
@@ -20544,7 +20452,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoPoseTry(v);
         scVideoClock();
       });
-      v.addEventListener('ended', function(){ scVideoAuxPause(); scVideoBig(true); scVideoBarState(); scVideoIdleWake(); });
+      v.addEventListener('ended', function(){ scVideoAuxPause(); scVideoFxStop(); scVideoBig(true); scVideoBarState(); scVideoIdleWake(); });
       v.addEventListener('error', scVideoFailed);
     }
 
@@ -20792,17 +20700,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoIdleArm(){
     scVideoIdleStop();
-    if(!scVideoState.wide) return;
     var v = scVideoEl('scVideoEl'), q = scVideoEl('scVideoQ');
     if(!v || v.paused || scVideoState.blocked || scVideoState.scrubbing) return;
     if(q && q.classList.contains('on')) return;
+    // THE BAR IS THE MINI BAR. It steps aside while the film runs - in portrait as
+    // well as on the glass - and a tap on the picture is what brings it back. The
+    // header does not leave with it in portrait: back, sizes and close stay.
+    var ms = scVideoState.wide ? SC_VQ_IDLE_MS : SC_VQ_IDLE_MS_PORTRAIT;
     scVideoState.idle = setTimeout(function(){
       scVideoState.idle = null;
       var vv = scVideoEl('scVideoEl'), qq = scVideoEl('scVideoQ');
-      if(!scVideoState.wide || !vv || vv.paused || scVideoState.scrubbing) return;
+      if(!vv || vv.paused || scVideoState.scrubbing) return;
       if(qq && qq.classList.contains('on')) return;
       scVideoIdleMark(true);
-    }, SC_VQ_IDLE_MS);
+    }, ms);
   }
   function scVideoIdleWake(){
     var was = !!scVideoState.idleOn;
@@ -20891,8 +20802,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.songWasPlaying = false;
   }
 
-  // The player call, with the two clients that still answer (the same pair
-  // scYtPlayer measured). Plain urls only: a cipher is not this path's problem.
+  // THE APP'S OWN RESOLVER, NOT A SECOND COPY OF IT. scYtPlayer carries the client
+  // list that still answers and the cipher handling the converter was measured with,
+  // and it hands back the picture rows of the same answer (`videos`). That is what
+  // this tab reads when its own call does not produce FULL HD.
+  function scVideoAppRows(videoId){
+    try{
+      if(typeof scYtPlayer !== 'function') return Promise.resolve(null);
+      return Promise.resolve(scYtPlayer(videoId)).then(function(r){
+        return (r && r.videos && r.videos.length) ? r : null;
+      }).catch(function(){ return null; });
+    }catch(_eApp){ return Promise.resolve(null); }
+  }
+
+  // The tab's own call first, with the two clients that still answer; it seats the
+  // rows that carry a plain address, and anything it cannot reach comes from
+  // scVideoAppRows above.
   function scVideoPlayer(videoId){
     var UA_ANDROID = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
     var UA_IOS = 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 18_0 like Mac OS X)';
@@ -20901,11 +20826,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
       { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS }
     ];
     var muxed = [], adaptive = [], sndRows = [], seen = {};
-    function take(list, into, kind){
+    function take(list, into, kind, app){
       (list || []).forEach(function(f){
         if(!f || !f.mimeType) return;
         var mt = String(f.mimeType).toLowerCase();
-        if(mt.indexOf('mp4') === -1) return;
+        // MP4 AND WEBM. MP4 is what the element prefers, but a video can carry its
+        // sharp sizes as VP9 or AV1 in WebM while its MP4 rows stop at 360p, and
+        // skipping those is half of how a size list ends up with one size on it.
+        if(mt.indexOf('mp4') === -1 && mt.indexOf('webm') === -1) return;
         if(kind === 'audio'){
           if(mt.indexOf('audio/') !== 0) return;
         } else {
@@ -20918,7 +20846,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(size > 1200 * 1024 * 1024) return;      // nothing this tab will hold
         seen[u] = true;
         into.push({ url: u, mime: String(f.mimeType), itag: Number(f.itag) || 0, size: size,
-                    h: scVideoHeight(f), bits: Number(f.bitrate) || 0 });
+                    h: scVideoHeight(f), bits: Number(f.bitrate) || 0, app: !!app });
       });
     }
     function bestAudio(rows){
@@ -20947,10 +20875,32 @@ function startLyricsAutoScroll(keepPos, noReset) {
         take(d.streamingData.adaptiveFormats, sndRows, 'audio');
       });
       var snd = bestAudio(sndRows);
-      var rungs = scVideoLadder(muxed, adaptive, snd);
-      if(!rungs.length) return null;
-      return { title: title, rungs: rungs, snd: snd,
-               length: Number(details && details.lengthSeconds) || 0 };
+      // A row set that can still grow has to be turned into a ladder more than once,
+      // so this is a function rather than a one-shot.
+      function assemble(){
+        var rungs = scVideoLadder(muxed, adaptive, snd);
+        if(!rungs.length) return null;
+        return { title: title, rungs: rungs, snd: snd,
+                 length: Number(details && details.lengthSeconds) || 0 };
+      }
+      var own = assemble();
+      // THE APP'S RESOLVER IS ASKED FOR EVERY VIDEO, not only when this call came
+      // back short. It is the call the converter, the downloader and Streaming play
+      // with, so its addresses are the measured ones - and asking it unconditionally
+      // is what stops a ladder that has a 1080p row on it from playing as 360p
+      // because the 1080p row that reached it could not be opened on this phone. One
+      // request per video is kept, so a size change or a NEXT does not pay again.
+      var key = String(videoId || '');
+      var have = (key && scVideoState.app) ? scVideoState.app[key] : null;
+      return (have ? Promise.resolve(have) : scVideoAppRows(videoId)).then(function(app){
+        if(app && key && scVideoState.app) scVideoState.app[key] = app;
+        if(app && app.videos && app.videos.length){
+          take(app.videos, adaptive, 'video', true);
+          if(!snd && app.snd) snd = scVideoSnd(app.snd);
+        }
+        var merged = assemble();
+        return merged || own;
+      }).catch(function(){ return own; });
     }).catch(function(){ return null; });
   }
 
@@ -21000,6 +20950,154 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_eSearch){ return Promise.resolve([]); }
   }
 
+  // ── the picture, upscaled ---------------------------------------------------
+  // THE SOFTEST RESIZE IS THE ONE THE COMPOSITOR DOES. A 480p or 720p film on a phone
+  // is stretched to the screen's own pixel grid with no sharpening at all, which reads
+  // as a blurry picture. HD+ draws each frame into a canvas that is already that grid,
+  // resamples it with the quality sampler, and lays the same frame over itself at half
+  // alpha through a contrast filter: one extra draw, no buffers and no second canvas.
+  // Flat areas are left alone and edges read firmer. It is a resample and a
+  // local-contrast sharpen, not a neural network - no model ships with this page and
+  // nothing is downloaded to run it.
+  var scVideoFxCv = null, scVideoFxCtx = null;
+
+  function scVideoFxPref(val){
+    try{
+      if(typeof localStorage === 'undefined' || !localStorage) return null;
+      if(val === undefined) return localStorage.getItem(SC_VFX_KEY);
+      localStorage.setItem(SC_VFX_KEY, val ? '1' : '0');
+    }catch(_eFxPref){}
+    return null;
+  }
+  // ON UNLESS SAID OTHERWISE: the report that asked for this asked for a better picture
+  // without having to find a switch first.
+  function scVideoFxOn(){
+    var raw = scVideoFxPref();
+    if(raw === null || raw === '') return true;
+    return String(raw) !== '0';
+  }
+  function scVideoFxCanvas(){
+    if(scVideoFxCv) return scVideoFxCv;
+    var st = scVideoEl('scVideoStage');
+    if(!st || typeof document === 'undefined' || !document.createElement) return null;
+    if(!st.appendChild) return null;
+    try{
+      var cv = document.createElement('canvas');
+      cv.id = 'scVideoFx';
+      if(cv.setAttribute) cv.setAttribute('aria-hidden', 'true');
+      st.appendChild(cv);
+      scVideoFxCv = cv;
+      scVideoFxCtx = null;
+      try{ scVideoFxCtx = cv.getContext ? cv.getContext('2d') : null; }catch(_eFxCtx1){ scVideoFxCtx = null; }
+      // A CANVAS THAT WILL NOT PAINT IS NOT A PICTURE. Without a 2D context the tab
+      // keeps the element on screen instead of hiding it behind a canvas that can
+      // never draw: a black stage is the one failure this tab must not have.
+      if(!scVideoFxCtx){ scVideoFxCv = null; return null; }
+    }catch(_eFxCv){ scVideoFxCv = null; scVideoFxCtx = null; }
+    return scVideoFxCv;
+  }
+  function scVideoFxPaint(){
+    var v = scVideoEl('scVideoEl'), cv = scVideoFxCv, ctx = scVideoFxCtx;
+    if(!v || !cv || !ctx) return;
+    var vw = Number(v.videoWidth) || 0, vh = Number(v.videoHeight) || 0;
+    if(!vw || !vh) return;
+    var st = scVideoEl('scVideoStage');
+    var r = null;
+    try{ r = st && st.getBoundingClientRect ? st.getBoundingClientRect() : null; }catch(_eFxRect){ r = null; }
+    if(!r || !r.width || !r.height) return;
+    var dpr = 1;
+    try{ dpr = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1)); }catch(_eFxDpr){ dpr = 1; }
+    var W = Math.max(2, Math.round(r.width * dpr)), H = Math.max(2, Math.round(r.height * dpr));
+    if(cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    // CONTAINED, the way object-fit contains it: a portrait phone still letterboxes a
+    // 16:9 film instead of stretching it.
+    var scale = Math.min(W / vw, H / vh);
+    var dw = Math.max(1, Math.round(vw * scale)), dh = Math.max(1, Math.round(vh * scale));
+    var dx = Math.round((W - dw) / 2), dy = Math.round((H - dh) / 2);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    try{ ctx.filter = 'none'; }catch(_eFxF){}
+    try{ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }catch(_eFxSm){}
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+    // ONE CLEARITY PASS. The same frame, contrast-stretched, over itself: local contrast
+    // goes up and edges read sharper, for one more draw and nothing to hold between
+    // frames. A phone whose canvas refuses `filter` still gets the resampled frame.
+    try{
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = SC_VFX_AMOUNT;
+      ctx.filter = 'contrast(1.5) saturate(1.06)';
+      ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+    }catch(_eFxPass){
+    }finally{
+      try{ ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }catch(_eFxReset){}
+    }
+  }
+  function scVideoFxFrame(){
+    if(!scVideoState.fxOn || !scVideoState.open) return;
+    var v = scVideoEl('scVideoEl');
+    if(!v || v.paused || v.ended || !v.src) return;
+    scVideoFxPaint();
+    scVideoFxQueue();
+  }
+  // One frame at a time, on the film's own clock where the phone offers it, so the
+  // canvas is never painted faster than the picture changes.
+  function scVideoFxQueue(){
+    if(!scVideoState.fxOn || !scVideoState.open || scVideoState.fxRaf) return;
+    var v = scVideoEl('scVideoEl');
+    if(!v) return;
+    if(typeof v.requestVideoFrameCallback === 'function'){
+      try{
+        var id = v.requestVideoFrameCallback(function(){ scVideoState.fxRaf = 0; scVideoFxFrame(); });
+        scVideoState.fxRaf = { vfc: id };
+        return;
+      }catch(_eFxVfc){}
+    }
+    if(typeof requestAnimationFrame === 'function'){
+      var rid = requestAnimationFrame(function(){ scVideoState.fxRaf = 0; scVideoFxFrame(); });
+      scVideoState.fxRaf = { raf: rid };
+    }
+  }
+  function scVideoFxStop(){
+    var h = scVideoState.fxRaf;
+    scVideoState.fxRaf = 0;
+    if(!h) return;
+    try{
+      var v = scVideoEl('scVideoEl');
+      if(h.vfc != null && v && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(h.vfc);
+      else if(h.raf != null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(h.raf);
+    }catch(_eFxStop){}
+  }
+  function scVideoFxStart(){
+    if(!scVideoState.open || !scVideoState.fxOn) return;
+    scVideoFxCanvas();
+    scVideoFxQueue();
+  }
+  // The canvas only covers the picture when the tab is open, the switch is on and the
+  // canvas exists - a phone that will not hand one over keeps the plain element rather
+  // than a black stage.
+  function scVideoFxApply(){
+    scVideoFxCanvas();
+    var st = scVideoEl('scVideoStage'), b = scVideoEl('scVideoBoost');
+    var on = !!(scVideoState.open && scVideoState.fxOn && scVideoFxCv);
+    if(st) st.classList.toggle('sc-vfx', on);
+    if(b){
+      b.classList.toggle('on', !!scVideoState.fxOn);
+      if(b.setAttribute) b.setAttribute('aria-pressed', scVideoState.fxOn ? 'true' : 'false');
+    }
+    if(on) scVideoFxStart(); else scVideoFxStop();
+  }
+  function scVideoFxToggle(){
+    scVideoState.fxOn = !scVideoState.fxOn;
+    scVideoFxPref(scVideoState.fxOn);
+    scVideoFxApply();
+    scVideoFoot(scVideoState.fxOn
+      ? 'Upscaling on - each frame is resampled to this screen and sharpened.'
+      : 'Upscaling off - the picture is shown the way it arrives.');
+    scVideoIdleWake();
+  }
+
   // ── the quality list -------------------------------------------------------
   function scVideoQualityToggle(force){
     var q = scVideoEl('scVideoQ');
@@ -21042,12 +21140,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var cur = scVideoState.rung;
     var auto = !scVideoState.want;
     var html = scVideoQualityRow(null, true, auto && !!cur);
-    // NOTHING UNDER 360p IS AN OFFER. Those rows exist in every answer as the floor
-    // of a bad connection, and listing them beside FULL HD is half of why the list
-    // read as a set of random sizes. They are still landed on as a last resort.
-    var shown = rungs.filter(function(r){ return r.h >= 360; });
-    if(!shown.length) shown = rungs;
-    shown.forEach(function(r){
+    // EVERY SIZE THE VIDEO HAS IS ON THE LIST. The rows under 360p used to be
+    // hidden as "the floor of a bad connection", which left a viewer who wanted 144p
+    // or 240p with no way to pick one. The ladder is the ladder.
+    rungs.forEach(function(r){
       html += scVideoQualityRow(r, false, !!cur && cur.h === r.h);
     });
     list.innerHTML = html;
@@ -21060,7 +21156,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var lines = [];
       var top = rungs.length ? rungs[0].h : 0;
       if(scVideoState.want && top && top < scVideoState.want){
-        lines.push('This video has no ' + scVideoState.want + 'p - it tops out at ' + top + 'p.');
+        lines.push('This video has no ' + scVideoSizeLabel(scVideoState.want) +
+                   ' - it tops out at ' + scVideoSizeLabel(top) + '.');
       }
       if(paired) lines.push('Above the one-stream sizes the picture and the same video soundtrack arrive as two streams and are played together.');
       note.style.display = lines.length ? '' : 'none';
@@ -21304,6 +21401,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_eSong){}
   }
 
+  // A TAP ON THE PICTURE OPENS THE MINI BAR. It was the same handler as the round
+  // button, so a tap on the film stopped it - the one thing a tap on a film should not
+  // do. A running picture is never stopped by a tap now; a stopped picture still starts
+  // on one, because that is what the big drawn button is asking for.
+  function scVideoPictureTap(){
+    // ONLY THE BAR. A tap on the film used to reach the play/pause, so looking at the
+    // picture stopped it; it brings the mini bar back and does nothing else. Play and
+    // pause belong to the round button, and to the big drawn button over a still.
+    scVideoIdleWake();
+  }
+
   function scVideoTap(){
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src){ if(scVideoState.open) scVideoStart(scVideoState.last || scVideoTrack()); return; }
@@ -21482,10 +21590,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // the whole ladder nine seconds at a time.
     var pool = scVideoLive(scVideoState.rungs);
     if(!pool.length) pool = scVideoState.rungs;
+    // ONE STEP AT A TIME, ALL THE WAY DOWN. The first refusal took the rung under the
+    // one that failed and the second jumped to the one-stream row, so a phone that
+    // refused 1080p and 720p was never offered the 480p picture it could open. Every
+    // refusal now steps to the rung directly under the one that failed, and only the
+    // bottom of the ladder is the one-stream fallback.
     var def = null;
-    if(!(Number(scVideoState.drops) > 0)){
+    if(Number(scVideoState.drops) < 4){
       def = scVideoRungBelow(pool, scVideoState.rung ? scVideoState.rung.h : 0);
-      if(def) scVideoState.drops = 1;
+      if(def) scVideoState.drops = Number(scVideoState.drops) + 1;
     }
     if(!def) def = scVideoDefault(pool);
     if(def && scVideoState.rung && def.h !== scVideoState.rung.h){
@@ -21576,6 +21689,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.resumeAt = null;
     scVideoState.drops = 0;
     scVideoState.retries = 0;
+    // A SIZE ONE VIDEO REFUSED IS NOT A VERDICT ON THE NEXT. This memory was kept for
+    // the whole session, so the first video that could not open 1080p here made every
+    // song after it open on 360p. It belongs to the video it happened on.
+    scVideoState.deadH = {};
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
       // ONLY THE LOAD THAT IS STILL CURRENT MAY UNLOCK THE TAB. A stale answer used
@@ -21759,6 +21876,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.busy = false;
     scVideoTickStop();
     scVideoWatchStop();
+    scVideoFxStop();
+    var fst = scVideoEl('scVideoStage');
+    if(fst) fst.classList.remove('sc-vfx');
     scVideoIdleStop();
     scVideoIdleMark(false);
     scVideoState.scrubbing = false;
@@ -21809,6 +21929,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     d.classList.add('on');
     try{ document.body.classList.add('sc-video-open'); }catch(_eBody){}
     scVideoState.open = true;
+    scVideoFxApply();
     var other = scVideoEl('scVideoNext');
     if(other) other.style.display = 'none';
     var t = scVideoTrack();
@@ -22921,7 +23042,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Reading the variable here is safe: it was set on the line above, in this
       // same pass — the loader used to read it from a different async pass, so
       // the value it saw depended on which read resolved first.
-      libraryMode = sandboxDefaultView === 'albums' ? 'albums' : 'playlists';
+      libraryMode = sandboxDefaultView === 'playlists' ? 'playlists' : 'albums';
       const actionPillOrderRow = metaRows.find(r => r.key === 'actionPillOrder');
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
@@ -23033,7 +23154,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.7';
+  const APP_VERSION = '85.3.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23743,6 +23864,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.3.2', date: 'November 19, 2026', title: 'The real size ladder, one step at a time, and the library opens on Albums', items: [
+    '[FULL] Music video quality lists the real sizes - 144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2K and 4K - and 1080p actually plays instead of falling to 360p.',
+    '[FULL] A size the phone refuses is no longer remembered against every song, and a refusal steps down one size at a time instead of jumping to the smallest.',
+    'Library opens on Albums, with Playlists one tap away.'
+  ] },
+      { version: '85.3.1', date: 'November 19, 2026', title: 'Music video sizes come from the working resolver, and one pass to sharpen', items: [
+    '[FULL] Music video sizes now come from the player the app already uses, so 1080p and sharper reach the quality list instead of stopping at 360p.',
+    '[FULL] The music video upscaler does the same job in fewer passes, so a sharper picture costs less battery.'
+  ] },
+      { version: '85.3.0', date: 'November 19, 2026', title: 'A tap opens the bar, every size is reachable, and the picture is upscaled', items: [
+    '[FULL] A tap on the music video no longer stops it. The tap opens the mini bar at the bottom, the film keeps playing, and the film is never paused by a tap.',
+    '[FULL] The quality list now finds every size a video has, including the ones the player hands over behind a protected link. FULL HD is still the default.',
+    '[FULL] The music video is upscaled and sharpened for this screen by default. HD+ in the mini bar turns it off, and the choice is kept.'
+  ] },
       { version: '85.2.7', date: 'November 19, 2026', title: 'The song on the screen is the song in the picture, and a way back', items: [
     '[FULL] The music video is always the song you are on. A lookup that answers after the song has changed is dropped, so a slow answer cannot put a different song on the screen.',
     '[FULL] The music video has a back button. The arrow at the left of its header returns to the app, with the song carrying on from the second the picture was on.'
@@ -59852,6 +59987,24 @@ function _renderAhFromData(artistAlbums){
     // a music upload they are the whole answer — with a muxed stream behind
     // them for the music case.
     var audioStreams = [], muxedStreams = [], seenUrls = {}, metaTitle = '', metaAuthor = '';
+    // THE PICTURE ROWS OF THE SAME ANSWER. Nothing in the converter reads these; the
+    // music video tab does. Its own call keeps only rows that carry a plain address,
+    // and a client that answers with just the muxed row leaves that tab with one size,
+    // so the sizes come from here - the resolver whose clients and cipher handling are
+    // the measured ones.
+    var videoRows = [], videoSeen = {};
+    function takeVideo(list){
+      (list || []).forEach(function(f){
+        if(!f || !f.mimeType) return;
+        if(String(f.mimeType).toLowerCase().indexOf('video/') !== 0) return;
+        var u = deco(f);
+        if(!u || videoSeen[u]) return;
+        videoSeen[u] = true;
+        videoRows.push({ url: u, mimeType: String(f.mimeType), itag: Number(f.itag) || 0,
+                         contentLength: Number(f.contentLength || f.clen) || 0,
+                         height: Number(f.height) || 0 });
+      });
+    }
     var take = function(list, wantMuxed, into, want){
       var rows = (list || []).slice();
       // Best first: opus 251 > m4a 141 > m4a 140, else first audio.
@@ -59910,12 +60063,15 @@ function _renderAhFromData(artistAlbums){
       // not a song that cannot play - it was the only candidate that got asked.
       take(d.streamingData.adaptiveFormats, false, audioStreams, 10);
       take(d.streamingData.formats, true, muxedStreams, 4);
+      takeVideo(d.streamingData.adaptiveFormats);
     }
     var streams = audioStreams.concat(muxedStreams);
     if(!streams.length) return null;
     return {
       url: streams[0].url, mime: streams[0].mime, itag: streams[0].itag, size: streams[0].size, muxed: !!streams[0].muxed,
-      alts: streams.slice(1), videoTitle: metaTitle, author: metaAuthor
+      alts: streams.slice(1), videoTitle: metaTitle, author: metaAuthor,
+      videos: videoRows,
+      snd: (audioStreams[0] ? { url: audioStreams[0].url, mime: audioStreams[0].mime, size: audioStreams[0].size } : null)
     };
   }
   // Tries every stream the player handed over (lead client first, then the
