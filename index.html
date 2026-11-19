@@ -19878,39 +19878,36 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
-  // ─── 85.3.3 - A REFUSED ADDRESS IS NOT A REFUSED PICTURE ──────────────────────
-  // THE SIZE LIST WAS RIGHT AND THE PICTURE STILL LANDED ON 360p. 85.3.2 put the
-  // ladder in, step by step, and made the resolver give every video its rows - and the
-  // tab still walked 1080p, 720p and 480p down to the one-stream row, because each of
-  // those rows was refused by the element itself (`this source is not a video the
-  // element can open`). Everything about that refusal is about the ADDRESS: a
-  // cross-origin media request, a URL the media stack will not fetch, a host that
-  // answers this app through its native bridge and not through a tag. None of it says
-  // anything about the picture behind the address.
+  // ─── 85.3.4 - ONE SONG, ONE FILM, AND THE FILM'S SOUND IS THE SONG'S SOUND ─────
+  // THREE REPORTS, AND THE FIRST TWO WERE THE SAME FAULT.
   //
-  // SO THE SIZE IS READ. The app already holds a reader that does not go through the
-  // element at all - the native bridge the downloader and Streaming read with, ranges
-  // and all. When a sharp row is refused with a decoder or container code, that row
-  // is read once, at the second the picture was on, and played from memory. The
-  // refusal that used to cost the picture is now one extra fetch of the size the
-  // viewer asked for; only a size whose bytes cannot be read either is given up on,
-  // and then the ladder steps down as before. A height is read once per video and
-  // never again, and the one-stream rows are never read because they already play.
+  // THE FILM KEPT CHANGING SONG. The tab follows the queue by comparing the song's
+  // key with the one the film was loaded for, and that key comes from whichever list
+  // answered - the streaming bar's own row, or the queue entry. Those are two names
+  // for one song, so a bar that came or went, or a row that answered a beat late, read
+  // as "the queue has moved": the tick loaded another film, then the old name came
+  // back, then the new one - three songs' videos taking turns over one song. A change
+  // now has to be the answer on two ticks in a row before anything is loaded, and a
+  // load starts no sooner than two and a half seconds after the one before it. Two
+  // names taking turns never agree twice, so a song cannot be reloaded by its own
+  // second name - and one that really does change still moves, a beat later.
   //
-  // AND THE LINKS KEEP THEIR QUERY. `scVideoNoRange` removes the `range` parameter a
-  // player puts in a row - half a file is not a source - but the rest of the query
-  // was rebuilt by a pair of replacements that left `?&` behind when `range` was the
-  // first parameter, and a query that starts with `&` is not a query: the element was
-  // handed a path and refused it. The parameter is dropped and the remaining pairs
-  // are kept intact now.
+  // AND EXITING THE FILM PAUSES THE MUSIC. Closing used to hand the song back at the
+  // picture's second and start it, so leaving the tab meant the music came back on by
+  // itself. The song is put back on that second and stays paused now; the round button
+  // is how it starts again.
   //
-  // AND HD+ SHARPENS INSTEAD OF WASHING. 85.3.1 replaced the sharpen with a contrast
-  // copy laid over the frame at half alpha through `overlay`, which lifts highlights
-  // and crushes shadows - on a soft film that already looked hazy it read as milk
-  // over the picture. An unsharp mask is back, built in one off-page canvas: the
-  // frame blurred, that copy subtracted from the frame (the outlines), and those
-  // outlines laid back over the frame. Flat areas are untouched, edges come up, and
-  // nothing is added to the bright end.
+  // AND THE FILM'S SOUND GETS THE SAME TREATMENT AS EVERY SONG. The player has an
+  // eight-band equalizer, a volume boost with its ceiling, an anti-muffler and the
+  // assistant duck, and all of them live on the app's Web Audio chain - which the
+  // music video's own elements were never on, so the film played the file as it came.
+  // The film's audio row is read through the same bridge the picture is read with (two
+  // or three megabytes), and the blob that comes back is this app's own resource, so it
+  // can go through the same filters and the same master: an element from another
+  // origin cannot (the spec hands a cross-origin element's MediaElementSource silence,
+  // not sound), which is why the voice is read rather than wired straight in. A size
+  // with no audio row at all still plays the song underneath, and the one-stream rows
+  // are only heard directly if the voice cannot be read.
 
   var scVideoState = {
     open: false, busy: false, tick: null, cands: [], ci: 0,
@@ -19921,6 +19918,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
+    pendingKey: '', lastLoad: 0, voice: null,
     fxOn: false, fxRaf: 0
   };
 
@@ -19931,6 +19929,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_WATCH_MS = 9000;               // how long a silent source gets, before its weight
   var SC_VQ_WATCH_PER_MB = 300;            // and this much more for every megabyte it fetches
   var SC_VQ_IDLE_MS_PORTRAIT = 3200;       // the mini bar steps aside in portrait too
+  var SC_VQ_FOLLOW_MS = 2500;              // a song change cannot reload films faster than this
+  var SC_VQ_VOICE_MAX = 16 * 1024 * 1024;  // the film's own audio row, read for the equalizer
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
   var SC_VFX_AMOUNT = 0.6;                 // how much of the frame's own edges comes back
   var SC_VFX_BLUR = 'blur(1px)';           // the copy the edges are taken from
@@ -20097,9 +20097,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
         h: b.h, label: scVideoSizeLabel(b.h), tag: scVideoRungTag(b.h),
         url: top.url, mime: top.mime, size: Number(top.size) || 0,
         muxed: !!top.muxed, codec: scVideoCodec(top.mime), alts: alts,
-        audioUrl: top.muxed ? '' : (snd ? snd.url : ''),
-        audioMime: top.muxed ? '' : (snd ? snd.mime : ''),
-        audioSize: top.muxed ? 0 : (snd ? snd.size : 0),
+        // THE VOICE IS THIS VIDEO'S OWN AUDIO ROW, whether or not the picture
+        // carries a copy of it. It is what the equalizer can reach.
+        audioUrl: snd ? snd.url : '',
+        audioMime: snd ? snd.mime : '',
+        audioSize: snd ? (Number(snd.size) || 0) : 0,
         // Whether the element claims it can decode the row this height resolved to.
         // A height whose only row it cannot open is offered as a marked row, never
         // as the default.
@@ -20437,6 +20439,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoWatchStop();
         scVideoBig(false); scVideoSpin(false); scVideoSay(''); scVideoBarState();
         scVideoState.drops = 0;              // a picture that plays has used no steps
+        scVideoGraphSync();
         if(scVideoState.audioMode === 'aux') scVideoAuxPlay();
         scVideoFxStart();
         scVideoIdleArm();
@@ -20605,6 +20608,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // sound), its paired soundtrack (a high size), and the song (a size with no
   // audio row at all). Exactly one of them is audible, and the app is told which
   // so its own recovery paths cannot start a song under the film.
+  // THE FILM'S SOUND IS THE APP'S SOUND. The picture and its voice are handed to the
+  // chain the songs use (the eight bands, the boost, its ceiling, the muffle and the
+  // duck) whenever they are this app's own resource. The chain refuses a remote
+  // element, because a MediaElementSource of one plays silence.
+  function scVideoGraphSync(){
+    try{
+      var fn = (typeof window !== 'undefined' && window) ? window.scVideoEqChain : null;
+      if(typeof fn !== 'function') return;
+      var v = scVideoEl('scVideoEl'), a = scVideoEl('scVideoAuxEl');
+      if(scVideoState.audioMode === 'aux' && a && a.src) fn(a);
+      else if(v && v.src) fn(v);
+    }catch(_eGraph){}
+  }
+
   function scVideoOwnSound(on){
     scVideoState.owns = !!on;
     try{ window.__scVideoSoundOwn = !!on; }catch(_eOwn){}
@@ -20802,16 +20819,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ if(typeof audio !== 'undefined' && audio && !audio.paused) audio.pause(); }catch(_eD1){}
     try{ if(typeof audio2 !== 'undefined' && audio2 && !audio2.paused) audio2.pause(); }catch(_eD2){}
   }
-  function scVideoReleaseSong(){
-    if(scVideoState.audioMode === 'song'){ scVideoState.songWasPlaying = false; return; }
+  // EXITING PAUSES THE MUSIC. The film owns the sound while it is up; when it is put
+  // away the song is seated on the second the picture stopped on and left PAUSED - a
+  // stop, not a hand-off that starts playing by itself because the tab was closed. The
+  // round button starts it again, from that second.
+  function scVideoParkSong(at){
     var a = scVideoAudioEl(), v = scVideoEl('scVideoEl');
-    var at = v ? (Number(v.currentTime) || 0) : 0;
-    var dur = 0;
-    try{ dur = a ? (Number(a.duration) || 0) : 0; }catch(_eDur){ dur = 0; }
-    if(a && scVideoState.songWasPlaying){
-      try{ if(at > 0 && (!dur || at < dur - 1)) a.currentTime = at; }catch(_eSeek){}
-      try{ var p = a.play(); if(p && p.catch) p.catch(function(){}); }catch(_ePlay){}
+    at = Number(at);
+    if(!at) at = v ? (Number(v.currentTime) || 0) : 0;
+    if(a && scVideoState.songWasPlaying && at > 0){
+      try{ a.currentTime = at; }catch(_eParkSeek){}
     }
+    try{ if(a) a.pause(); }catch(_eParkPause){}
+    try{ if(typeof audio !== 'undefined' && audio) audio.pause(); }catch(_eParkD1){}
+    try{ if(typeof audio2 !== 'undefined' && audio2) audio2.pause(); }catch(_eParkD2){}
     scVideoState.songWasPlaying = false;
   }
 
@@ -21263,7 +21284,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.pick = { url: rung.url, mime: rung.mime, size: rung.size };
     scVideoState.alts = (rung.alts || []).slice();
     scVideoState.alt = 0;
-    scVideoState.audioMode = rung.muxed ? 'video' : (rung.audioUrl ? 'aux' : 'song');
+    // THE PAIRED VOICE IS PREFERRED, even on a one-stream row: the same recording,
+    // in the element the app can filter. A one-stream row is only heard directly when
+    // there is no audio row at all to pair it with.
+    scVideoState.audioMode = rung.audioUrl ? 'aux' : (rung.muxed ? 'video' : 'song');
+    scVideoVoiceReset();
     scVideoState.resumeAt = at;
     scVideoQualityMark();
     scVideoFoot((rung.muxed
@@ -21362,12 +21387,65 @@ function startLyricsAutoScroll(keepPos, noReset) {
       ? 'Changing to ' + scVideoState.rung.label + '…'
       : 'Starting the video…');
     scVideoWatch();
+    scVideoGraphSync();
     if(scVideoState.wasPlaying){ scVideoPlayAttempt(); }
     else { scVideoSpin(false); scVideoBig(true); scVideoBarState(); scVideoClock(); }
   }
 
   // The soundtrack of a high rung: the same video's own audio row, in its own
   // element, posed onto the picture's second rather than onto the song's.
+  // THE VOICE IS READ, NOT WIRED. A media element from googlevideo is another
+  // origin, and a cross-origin element handed to the app's audio graph plays silence,
+  // not sound - so the equalizer can never reach it while it is a remote tag. The same
+  // bridge the film is read with reads the film's audio row (two or three megabytes),
+  // and the blob that comes back is this app's own resource, which the filters, the
+  // boost, the anti-muffler and the duck all reach. The direct link plays first so a
+  // song change is never silent; the blob swaps under it a moment later, on the same
+  // second, and only then is the element unmuted.
+  function scVideoVoiceReset(){
+    var st = scVideoState.voice;
+    if(st && st.blob){ try{ URL.revokeObjectURL(st.blob); }catch(_eVoiceRev){} }
+    scVideoState.voice = null;
+  }
+  function scVideoVoice(r){
+    if(!r || !r.audioUrl) return '';
+    var st = scVideoState.voice;
+    if(st && st.for === r && st.blob) return st.blob;
+    if(!st || st.for !== r){
+      scVideoState.voice = { for: r, blob: '', reading: false };
+      scVideoVoiceRead(r, scVideoState.voice);
+    }
+    return r.audioUrl;
+  }
+  function scVideoVoiceRead(r, st){
+    if(!st || st.reading) return;
+    if(typeof scFetchBytes !== 'function') return;
+    var size = Number(r.audioSize) || 0;
+    if(size > SC_VQ_VOICE_MAX) return;                       // a film's audio is a few megabytes
+    st.reading = true;
+    var job = null;
+    try{ job = scFetchBytes(r.audioUrl, size || SC_VQ_VOICE_MAX, null, 4); }catch(_eVoiceRead){ job = null; }
+    if(!job){ st.reading = false; return; }
+    Promise.resolve(job).then(function(buf){
+      if(scVideoState.voice !== st) return;
+      st.reading = false;
+      if(!scVideoState.open || !buf || !buf.byteLength) return;
+      if(scVideoState.rung !== r) return;                    // a size changed while reading
+      var type = String(r.audioMime || 'audio/mp4').split(';')[0].trim() || 'audio/mp4';
+      var blob = null;
+      try{ blob = URL.createObjectURL(new Blob([buf], { type: type })); }catch(_eVoiceBlob){ blob = null; }
+      if(!blob) return;
+      st.blob = blob;
+      var a = scVideoEl('scVideoAuxEl'), v = scVideoEl('scVideoEl');
+      if(!a || scVideoState.audioMode !== 'aux') return;
+      var at = v ? (Number(v.currentTime) || 0) : 0;
+      try{ a.pause(); a.src = blob; a.load(); }catch(_eVoiceSwap){ return; }
+      scVideoPose(a, at);
+      scVideoState.posing = true;
+      scVideoGraphSync();
+    }).catch(function(){ if(scVideoState.voice === st) st.reading = false; });
+  }
+
   function scVideoAuxSet(at){
     var a = scVideoEl('scVideoAuxEl');
     var r = scVideoState.rung;
@@ -21378,11 +21456,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ a.muted = true; a.volume = 1; }catch(_eAv){}
     scVideoState.posing = false;
     if(!r || !r.audioUrl) return;
-    try{ a.src = r.audioUrl; }catch(_eSrc){ return; }
+    var url = scVideoVoice(r);
+    try{ a.src = url; }catch(_eSrc){ return; }
     try{ a.load(); }catch(_eAl){}
     scVideoPose(a, at);                    // applied when this element has a duration
     scVideoState.posing = true;
     scVideoMuteOthers();
+    scVideoGraphSync();
   }
   function scVideoAuxPause(){
     var a = scVideoEl('scVideoAuxEl');
@@ -21391,6 +21471,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoAuxPlay(){
     var a = scVideoEl('scVideoAuxEl'), v = scVideoEl('scVideoEl');
     if(!a || !a.src) return;
+    // A ROUTED ELEMENT MAY NOT PLAY A REMOTE LINK. Once the voice is on the app's
+    // graph, an element from another origin would come out as silence; the blob is
+    // what is heard, so the read is waited for rather than played around.
+    if(a.__scVideoChain && String(a.src || '').indexOf('blob:') !== 0) return;
     if(scVideoState.audioMode !== 'aux'){ try{ a.muted = true; }catch(_eAuxQ){} return; }
     // THE FRAME IS THE CLOCK. There is nothing to line a voice up with until the
     // picture is running, and starting early is exactly what put it ahead.
@@ -21410,11 +21494,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoAuxFallBack(why){
     if(scVideoState.audioMode !== 'aux') return;
-    scVideoState.audioMode = 'song';
+    var rung = scVideoState.rung;
+    var v = scVideoEl('scVideoEl'), a = scVideoAudioEl();
     scVideoState.posing = false;
+    // A ONE-STREAM SIZE CARRIES ITS OWN SOUND. When its paired voice will not play,
+    // the picture is the sound rather than the song - the same recording, in the
+    // element that is already on the screen.
+    if(rung && rung.muxed){
+      scVideoState.audioMode = 'video';
+      try{ if(v) v.muted = false; }catch(_eAfV){}
+      scVideoAuxPause();
+      scVideoMuteOthers();
+      scVideoOwnSound(true);
+      scVideoFoot('The paired track of this size would not play (' + why + ') - the size carries its own sound.');
+      scVideoTickStart();
+      return;
+    }
+    scVideoState.audioMode = 'song';
     scVideoOwnSound(false);
     scVideoAuxPause();
-    var v = scVideoEl('scVideoEl'), a = scVideoAudioEl();
     try{
       if(a){
         a.currentTime = v ? (Number(v.currentTime) || 0) : 0;
@@ -21495,13 +21593,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // The picture belongs to the song that is playing, not to the song the tab was
   // opened for. When the queue moves on, the film moves with it and opens on the
   // new song's own second.
+  // A CHANGE HAS TO STAY A CHANGE. The key a film is loaded for comes from whichever
+  // list answered - the streaming bar's row or the queue entry - and those are two
+  // names for one song, so a bar that came or went read as a new song and the film was
+  // loaded again, and again when the old name came back. A different key is written
+  // down on the first tick and acted on only if it is still the answer on the next one;
+  // two names taking turns never agree twice. A load also waits out a short window
+  // after the last one, so a burst of ticks cannot turn into a burst of lookups.
   function scVideoFollow(){
     if(!scVideoState.open || scVideoState.busy || scVideoState.scrubbing) return false;
     var t = scVideoTrack();
     var key = String((t && t.key) || '');
     if(!key) return false;
-    if(!scVideoState.songKey){ scVideoState.songKey = key; return false; }
-    if(key === scVideoState.songKey) return false;
+    if(!scVideoState.songKey){ scVideoState.songKey = key; scVideoState.pendingKey = ''; return false; }
+    if(key === scVideoState.songKey){ scVideoState.pendingKey = ''; return false; }
+    if(key !== scVideoState.pendingKey){ scVideoState.pendingKey = key; return false; }
+    scVideoState.pendingKey = '';
+    var now = 0;
+    try{ now = Date.now ? Date.now() : new Date().getTime(); }catch(_eNow){ now = 0; }
+    if(now && scVideoState.lastLoad && (now - Number(scVideoState.lastLoad)) < SC_VQ_FOLLOW_MS) return false;
     scVideoState.songKey = key;
     // THE NEW SONG WAS BEING HELD. Its own play was stopped while the picture owned
     // the sound, so ownership is given back before it is asked to run - the tab is
@@ -21796,6 +21906,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   function scVideoLoad(cand){
     if(!cand) return Promise.resolve(false);
+    try{ scVideoState.lastLoad = Date.now ? Date.now() : new Date().getTime(); }catch(_eLoadAt){}
     // Which load this is. A resolve that comes back for a song the queue has already
     // left is history, not a picture.
     var seq = (scVideoState.loadSeq = (scVideoState.loadSeq || 0) + 1);
@@ -21873,7 +21984,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var offNote = 'That clip runs ' + scVideoMMSS(scVideoState.vidLen) + ' for a ' +
         scVideoMMSS(songLen) + ' song';
       scVideoFoot(offNote + ' - looking for the right one.');
-      return scVideoSearch(scVideoState.last).then(function(list){
+      // THE SONG THAT IS ON NOW, not the one this tab was opened for: a search run
+      // with a stale title is how one song's clip arrives under another's name.
+      return scVideoSearch(scVideoTrack() || scVideoState.last).then(function(list){
         if(seq !== scVideoState.loadSeq) return false;
         if(!list || !list.length){
           scVideoFoot(offNote + ', and the search found nothing better.');
@@ -22002,6 +22115,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoLandscape(){ scVideoWide(!scVideoState.wide); }
 
   function scVideoClose(){
+    // THE SECOND THE FILM STOPPED, read before the element is cleared: a cleared
+    // element knows nothing, and the song would be seated at the start instead.
+    var stopAt = 0;
+    try{ var pv = scVideoEl('scVideoEl'); stopAt = pv ? (Number(pv.currentTime) || 0) : 0; }catch(_eStopAt){ stopAt = 0; }
     scVideoState.open = false;
     // NOTHING THAT WAS STILL LOOKING MAY COME BACK. A lookup or a player answer that
     // was in flight when the tab closed would otherwise attach a source to a page
@@ -22036,7 +22153,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // The song picks up where the video stopped, so the tab is a detour - and it
     // may start freely now, because nothing here owns the sound any more.
     scVideoOwnSound(false);
-    scVideoReleaseSong();
+    scVideoParkSong(stopAt);
+    scVideoVoiceReset();
     try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev2){}
     scVideoState.blobUrl = '';
     scVideoState.pick = null;
@@ -23289,7 +23407,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.3';
+  const APP_VERSION = '85.3.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23999,6 +24117,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.3.4', date: 'November 19, 2026', title: 'One song, one film, and the same equalizer on the film', items: [
+    '[FULL] The music video stays on the song that is playing: a change has to hold for two ticks before another film is loaded, so it no longer takes turns between three songs.',
+    '[FULL] Leaving a music video pauses the music on the second the picture stopped, instead of starting the song again by itself.',
+    '[FULL] The equalizer, the volume boost, the anti-muffler and the duck reach the music video sound too, because its audio is read and played through the same chain as every song.'
+  ] },
       { version: '85.3.3', date: 'November 19, 2026', title: 'The sharp size is read when the player refuses it, and HD+ sharpens instead of washing', items: [
     '[FULL] A sharp size the player refuses is now read by the app itself and played from memory, so 1080p opens instead of falling to 360p.',
     '[FULL] HD+ is a real edge sharpen now instead of a contrast wash, so a smaller size reads sharper on a big screen.',
@@ -30110,6 +30233,75 @@ function startLyricsAutoScroll(keepPos, noReset) {
       recordDestNode = null;
     }
   }
+  // 85.3.4 - THE FILM'S SOUND IS THE SONG'S SOUND. The music video tab plays its own
+  // elements, and an element that is not in this graph gets no equalizer, no volume
+  // boost, no anti-muffler and no duck: it plays the file exactly as it came. Each
+  // element the tab hands over gets its own band chain and its own limiter, and lands
+  // on the same master the decks do (boost -> anti-muffler -> ceiling -> duck ->
+  // speakers), so every adjustment made for a song is made for its film.
+  //
+  // A REMOTE ELEMENT IS REFUSED, NOT SILENCED. A media element from another origin
+  // hands a MediaElementSource nothing but silence - that is the spec, not a bug - so
+  // only this app's own blobs and pages are routed. The tab reads the film's own audio
+  // row through the native bridge, so its voice IS a blob; until that arrives nothing
+  // is routed and the direct link plays as it did before.
+  const scVideoChains = [];
+  function scVideoChainFor(el){
+    if(!el) return null;
+    try{
+      ensureAudioGraph();
+      if(!audioCtx) return null;
+      if(el.__scVideoChain) return el.__scVideoChain;
+      var u = String(el.currentSrc || el.src || '');
+      var local = !u || u.indexOf('blob:') === 0 || u.indexOf('data:') === 0;
+      if(!local){
+        var o = '';
+        try{ o = String(location.origin || ''); }catch(_eOrigin){ o = ''; }
+        local = !!(o && o !== 'null' && u.indexOf(o) === 0);
+      }
+      if(!local) return null;
+      const srcNode = audioCtx.createMediaElementSource(el);
+      const bands = EQ_BANDS.map((b, i) => {
+        const f = audioCtx.createBiquadFilter();
+        if(i === 0) f.type = 'lowshelf';
+        else if(i === EQ_BANDS.length - 1) f.type = 'highshelf';
+        else { f.type = 'peaking'; f.Q.value = 1.1; }
+        f.frequency.value = b.freq;
+        return f;
+      });
+      for(let i = 0; i < bands.length - 1; i++) bands[i].connect(bands[i + 1]);
+      const gain = audioCtx.createGain();
+      const limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 6;
+      limiter.ratio.value = 16;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.25;
+      srcNode.connect(bands[0]);
+      bands[bands.length - 1].connect(gain).connect(limiter);
+      // THE SAME MASTER AS EVERY SONG: the boost, its ceiling, the anti-muffler and
+      // the duck all sit between here and the speakers.
+      limiter.connect(scBoostGain || scDuckMaster || audioCtx.destination);
+      const chain = { el: el, src: srcNode, bands: bands, gain: gain, limiter: limiter };
+      try{ el.__scVideoChain = chain; }catch(_eMark){}
+      scVideoChains.push(chain);
+      scVideoEqApply();
+      return chain;
+    }catch(_eChain){ return null; }
+  }
+  // The film rides the GLOBAL equalizer - the eight bands every song gets - and the
+  // values are refreshed whenever a slider moves, because applyEQ calls this.
+  function scVideoEqApply(){
+    const preset = (typeof globalEQ === 'object' && globalEQ) ? globalEQ : null;
+    for(let c = 0; c < scVideoChains.length; c++){
+      const chain = scVideoChains[c];
+      if(!chain) continue;
+      EQ_BANDS.forEach((b, n) => {
+        try{ chain.bands[n].gain.value = preset ? (preset[b.key] || 0) : 0; }catch(_eBand){}
+      });
+    }
+  }
+  window.scVideoEqChain = function(el){ return scVideoChainFor(el); };
   const deckGainNodes = [null, null]; // DJ Mode "GAIN" knob per deck, independent of auto-normalize
   const limiterNodes = [null, null];
   // 80.0.1 - the master node the assistant duck rides. Declared here, after
@@ -30131,6 +30323,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!nodes) return;
     const preset = (t.vibe && VIBES[t.vibe]) || globalEQ;
     EQ_BANDS.forEach((b, i) => { nodes[i].gain.value = preset[b.key] || 0; });
+    // 85.3.4 - and the film, which is on the same equalizer.
+    try{ scVideoEqApply(); }catch(_eVideoEq){}
   }
   function applyNormalizedGain(t, audioIdx, opts){
     ensureAudioGraph();

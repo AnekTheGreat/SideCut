@@ -1,5 +1,92 @@
 # SideCut — repository memory
 
+## 85.3.4 (November 19, 2026 · 6:20 PM EST): one song, one film, the music pauses on the way out, and the equalizer reaches the film
+
+**The film kept changing song.** The tab follows the queue by comparing the playing
+song's key with the key the film was loaded for, and that key comes from whichever
+list answered - the streaming bar's own row (`s:<id>`) or the queue entry (`q:<id>`).
+Those are two names for one recording, so a bar that came or went, or a row that
+answered a beat late, read as "the queue has moved": the tick loaded another film,
+then the old name came back, then the new one, and three songs' videos took turns over
+one song. `scVideoFollow` now writes a different key down on the first tick and acts
+only when it is still the answer on the next one (`scVideoState.pendingKey`), and a
+load starts no sooner than `SC_VQ_FOLLOW_MS` (2.5s) after the one before it. Two names
+taking turns never agree twice, so a song cannot be reloaded by its own second name,
+while a real change still moves - one tick later. The far-clip search also asks for the
+song that is on now (`scVideoTrack()`) rather than the one the tab was opened for,
+which is how one song's clip could arrive under another's name.
+
+**Leaving the film pauses the music.** `scVideoReleaseSong` handed the song back at
+the picture's second and started it, so closing the tab turned the music back on by
+itself. `scVideoParkSong(at)` seats the song on that second and pauses it, and
+`scVideoClose` reads the second before it clears the element (a cleared element is at
+zero) and passes it in. The round button starts the song again from there.
+
+**The equalizer reaches the film.** The eight bands, the volume boost, its ceiling, the
+anti-muffler and the duck all live on the app's Web Audio chain, which the tab's own
+elements were never on - so the film played the file as it came. Two things were needed:
+
+  * the film's own audio row is now read through the native bridge (`scVideoVoice` /
+    `scVideoVoiceRead`, ceiling 16 MB) and played from a blob, because a media element
+    from another origin hands a `MediaElementSource` silence, not sound - a remote
+    link can never be filtered. The direct link plays first so a song change is never
+    silent, and the blob swaps under it on the same second;
+  * the page grew `scVideoChainFor(el)` beside the decks' graph: one band chain, a
+    gain and a limiter per element, landing on the same master as every song
+    (`scBoostGain` -> muffle -> ceiling -> duck). `scVideoEqApply` mirrors the GLOBAL
+    equalizer onto it and is called from `applyEQ`, so a slider moves the film too.
+    The module reaches it through `window.scVideoEqChain` (a name of its own: a
+    `window.scVideoGraphSync` would overwrite the module's own function).
+
+A ladder rung now always carries its paired audio row, even when the picture is a
+one-stream row, so a one-stream size is heard through the element the app can filter.
+`scVideoAuxFallBack` sends a refused one-stream voice back to the picture's own sound
+(`video` mode) instead of the song, and the song only when the row has no audio at all.
+
+`dev/build-8534.py` rebuilds `dev/video-8534.js` from `dev/video-8533.js`, slicing the
+four rewritten functions by their own boundaries and asserting every other edit appears
+exactly once. `dev/patch-8534.py` replaces the module slice (from the 85.3.4 banner to
+the shelf comment that follows it), inserts the film's chain and the `applyEQ` hook,
+then moves the version line, the cache name, one notes entry and `updates.json` to
+85.3.4.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1306990 bytes**, `ota-play/updates.json` **1307004 bytes**. Page-only: no native
+change, so the APK is not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `dev/check-8534.cjs` passes **243 assertions, 0 failed**, the 235 of 85.3.3
+included, with the three assertions whose contract this release changed rewritten (a
+one-stream size now keeps the picture muted and pairs its own audio row; closing now
+leaves the music paused on the picture second). The ones this release is about: six
+ticks that alternate between `s:t1` and `q:t1` - two names for one song - load nothing
+and leave the film on `q:t1`; a real change is ignored on the first tick and followed
+on the second, and then the tab is on the new song and has asked the player for it; a
+cover for a song the queue left is still not put up; `scVideoParkSong` seats the song
+on 95s and does not start it, and `scVideoClose` leaves it paused at the picture's
+second with no new `play()`; a ladder rung whose picture is one-stream carries
+`audioUrl`; the voice is read once through the bridge (`snd`), the element ends up on
+the `blob:…` this app made, and the element is handed to the equalizer chain
+(`scVideoEqChain`). `python3 dev/patch-8534.py` applied cleanly on a page reverted to
+85.3.3 and a second run prints `already on the page`; the module on the page is
+byte-identical to `dev/video-8534.js`, all 7 inline scripts parse (the notes title
+carried an apostrophe on the first attempt, which is a parse error in this page - it
+was caught by exactly that check and rewritten), `function scVideoUrl` is still absent
+and the sound flag is still read in all five places. Both OTA channels reached their
+fixed point and verify with `--check`.
+
+Not checked: nothing here was run on a phone or in a browser session, so the film
+changing songs cannot be watched - what is proven is that a flip-flop between two
+names does not load and that a change needs two ticks, not that a particular radio
+stops cycling. The equalizer is proven as wiring: the voice becomes this app's blob and
+the element is handed over, but no sound was heard through the chain, the bend of the
+bands on a film was not measured, and the cost of eight filters plus a limiter on the
+film's audio path is unmeasured. A device whose WebView refuses a `MediaElementSource`
+for a blob would leave the film silent (the code never routes a remote element, and a
+routed element never plays one); that is the failure to watch for, and the footer says
+nothing about it. The paused-on-exit change was proven against a stubbed element.
+
 ## 85.3.3 (November 19, 2026 · 5:02 PM EST): the sharp size is read when the player refuses it, and HD+ sharpens instead of washing
 
 **The ladder was right and the picture still landed on 360p.** The report after 85.3.2
