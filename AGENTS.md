@@ -45,7 +45,7 @@ module carries `scVideoUrl` again, if the 85.2.1 sound flag is read fewer than f
 times, or if the washing `overlay` pass comes back.
 
 Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
-**1303548 bytes**, `ota-play/updates.json` **1303564 bytes**. Page-only: no native
+**1303694 bytes**, `ota-play/updates.json` **1303710 bytes**. Page-only: no native
 change, so the APK is not rebuilt.
 
 ### What was checked, and what was not
@@ -55,7 +55,8 @@ included. The ones this release is about: a `range` pair in the middle, at the f
 at the end and alone is dropped while the rest of the query survives, a link with no
 range and a blob are untouched; with a 1080p row refused at code 4 the tab asks the
 bridge for that row's URL once, asks for the length it reported, stays on 1080p, plays
-`blob:…`, is back on the second it was on (42s), says `read instead (1080p)` on the
+`blob:…`, is back on the second it was on (42s) while a read for a picture that never
+started keeps no second at all and opens on the song's own, says `read instead (1080p)` on the
 footer, and the one-stream row is never read; the same size is not read twice and the
 next refusal steps down to 720p; a reader that answers nothing steps down with the
 footer naming the size it went to; `scVideoReadCap` reports 64 MiB when the page has no
