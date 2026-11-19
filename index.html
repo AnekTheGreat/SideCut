@@ -19876,6 +19876,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.3 - A BUSY SIGNAL IS NOT A REFUSAL ─────────────────────────────────
+  // WHAT 85.2.2 STILL GOT WRONG. The tab could fall from 1080p to 360p for two
+  // reasons that are not a refusal. One: a dropped connection arrives as a media
+  // error like any other, and the road treated it as the size being wrong - so a
+  // signal that was busy for a second demoted the picture, and the step after the
+  // first demotion is the 360p row. Two: the nine-second "nothing started" watch
+  // was written for the smallest row and called a 1080p picture dead while it was
+  // still fetching the bytes it needs, so a slow start walked the ladder down.
+  //
+  // A DROP RETRIES, A REFUSAL STEPS DOWN. A network error - or an abort on a
+  // source that has been attached for a while - now restarts the same source at
+  // the same second, once, and never changes the size; only the phone actually
+  // refusing the picture (codes 3 and 4) walks one step down. The watch is
+  // scaled to the size and asks whether bytes are still arriving: a source that
+  // is buffering, or that the element is still loading, gets more time instead of
+  // a smaller picture. 1080p stays 1080p through a bad minute, which is what the
+  // default is worth.
   // ─── 85.2.2 - FULL HD BY DEFAULT, AND ONE STEP DOWN ────────────────────────
   // WHAT 85.2.1 LEFT UNFINISHED. The tab opened on AUTO, and AUTO is the best
   // row that carries its own sound - which on most videos is the 360p
@@ -19964,13 +19981,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0, retries: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
   var SC_VQ_DEFAULT = 1080;                // a viewer who has never chosen gets FULL HD
   var SC_VQ_READ_MAX = 64 * 1024 * 1024;   // the byte reader is not a 4K decoder
   var SC_VQ_IDLE_MS = 2000;                // the transport rests two seconds into landscape
+  var SC_VQ_WATCH_MS = 9000;               // how long a silent source gets, before its weight
+  var SC_VQ_WATCH_PER_MB = 300;            // and this much more for every megabyte it fetches
 
   function scVideoEl(id){ try{ return document.getElementById(id); }catch(_e){ return null; } }
 
@@ -20822,6 +20841,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoIdleWake();
     scVideoWantSet(h);
     scVideoState.drops = 0;             // a size picked by hand gets the whole road
+    scVideoState.retries = 0;
     scVideoState.want = Number(h) || 0;
     var r = scVideoRungFor(scVideoState.rungs, h);
     if(!r) return;
@@ -20855,21 +20875,40 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return true;
   }
 
-  // A SIZE THAT NEVER STARTS IS NOT A BLACK PANEL. Nine seconds after a source is
-  // attached, if nothing has played and no frame has arrived, the same road a
-  // refusal takes is walked instead - another codec, then the best one-stream
-  // size - and the footer says which.
+  // A SIZE THAT NEVER STARTS IS NOT A BLACK PANEL. A source that has produced
+  // nothing is walked the way a refusal is - another codec, then one size down -
+  // but only once it is clear nothing is coming. Nine seconds was written for the
+  // smallest row: a 1080p row is three or four times the bytes, and calling it
+  // dead at nine seconds while it was still fetching is what walked a slow
+  // picture down to 360p. The watch now scales with the weight of the size, and
+  // asks whether the element is still loading at all.
   function scVideoWatch(){
     scVideoWatchStop();
     var token = (scVideoState.watchToken = (scVideoState.watchToken || 0) + 1);
+    var ms = scVideoWatchMs(scVideoState.rung && scVideoState.rung.size);
     scVideoState.watch = setTimeout(function(){
       scVideoState.watch = null;
       if(token !== scVideoState.watchToken) return;
       var v = scVideoEl('scVideoEl');
       if(!v || !v.src || v.paused || scVideoState.blocked) return;
       if(v.readyState >= 2 || (Number(v.currentTime) || 0) > 0.4) return;
+      // NOT SLOW, DEAD. Bytes that have arrived - even a little - are a size that
+      // works; a source the element is still fetching gets more time rather than
+      // a smaller size. Only a source that has stopped, with nothing buffered, is
+      // treated as a refusal.
+      var buffered = 0;
+      try{ buffered = (v.buffered && v.buffered.length) ? (Number(v.buffered.end(v.buffered.length - 1)) || 0) : 0; }catch(_eBuf){ buffered = 0; }
+      if(buffered > 0.05) return;
+      if(Number(v.networkState) === 2) return;      // still fetching: it is not dead
       scVideoFailed();
-    }, 9000);
+    }, ms);
+  }
+  // The deadline for a silent source: the base, plus a little for every megabyte
+  // it has to fetch, capped - a 24 MB 1080p row gets sixteen seconds, and nothing
+  // waits longer than twenty-one.
+  function scVideoWatchMs(size){
+    var mb = Math.max(0, Math.round((Number(size) || 0) / 1048576));
+    return Number(SC_VQ_WATCH_MS) + Math.min(12000, mb * Number(SC_VQ_WATCH_PER_MB));
   }
   function scVideoWatchStop(){
     if(scVideoState.watch){ clearTimeout(scVideoState.watch); scVideoState.watch = null; }
@@ -21111,6 +21150,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var fresh = 0;
     try{ fresh = (Date.now ? Date.now() : new Date().getTime()) - (Number(scVideoState.swapAt) || 0); }catch(_eNow){}
     if(fresh < 900 && why === 'the read was aborted') return;
+    // A DROPPED CONNECTION IS NOT A WRONG SIZE. Code 2 is the network letting go
+    // for a moment, and walking down the ladder on it is how a 1080p picture ends
+    // up on the 360p row over a signal that was only busy. The same source is
+    // restarted at the same second, once, and the size is not touched. A second
+    // drop means the source is not coming back and the road carries on.
+    var code = Number(v && v.error && v.error.code) || 0;
+    if(code === 2 || (code === 1 && fresh >= 900)){
+      var again = v ? String(v.src || '') : '';
+      if(again && !(Number(scVideoState.retries) > 0)){
+        scVideoState.retries = 1;
+        scVideoState.resumeAt = Number(v.currentTime) || 0;
+        // On the footer, not the transient line: starting the source clears that
+        // one, and this is the thing worth knowing when the picture stumbles.
+        scVideoFoot('The connection dropped (' + why + '). The same size is starting again.');
+        scVideoAttach(again, scVideoState.via || 'direct', true);
+        return;
+      }
+      scVideoState.retries = 0;
+    }
     // Another codec at the same height, first: the size the owner asked for is
     // worth one more stream before it is given up on.
     var alts = scVideoState.alts || [];
@@ -21210,6 +21268,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.rung = null;
     scVideoState.resumeAt = null;
     scVideoState.drops = 0;
+    scVideoState.retries = 0;
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
       scVideoState.busy = false;
@@ -22589,7 +22648,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.2';
+  const APP_VERSION = '85.2.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23299,6 +23358,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.3', date: 'November 18, 2026', title: 'A busy signal is not a refusal', items: [
+    '[FULL] The music video stays on the size you asked for. A dropped connection used to be treated as the size being wrong, so a signal that was busy for a second could take a 1080p picture down to 360p. The same size now starts again at the second it was on, and only a phone that actually refuses the picture steps down.',
+    '[FULL] A big size is given the time it needs. The check that watched for a size that never started called it at nine seconds, which is the smallest row budget - a 1080p picture was given up while it was still fetching its bytes. The wait now grows with the size, and a picture that is still loading, or that has already buffered something, is left alone.',
+    '[FULL] When a size is given up, the footer says which size it went to and why, so a smaller picture is never a mystery.'
+  ] },
       { version: '85.2.2', date: 'November 18, 2026', title: 'Full HD by default', items: [
     '[FULL] The music video opens at FULL HD now. The tab used to open on AUTO, which is the best row that carries its own sound - usually 360p - so the sharpest sizes sat in a list nobody had a reason to open. 1080p is where a viewer who has never picked a size now lands, and the size list marks that row as the default.',
     '[FULL] A video with no 1080p opens at the largest size under it, and the size list says so on the spot instead of leaving you to work out why the picture is softer than expected.',

@@ -1,70 +1,64 @@
-## 85.2.2 ({{STAMP}}): FULL HD by default, and one step down
+## 85.2.3 ({{STAMP}}): a busy signal is not a refusal
 
-**85.2.1 made every size sound right, and the tab still opened on the soft one.**
-AUTO is the best row that carries its own sound, which on most videos is the 360p
-progressive row a phone is handed - so the sharpest picture the video had was one
-tap away in a list, and nothing on the screen said so. A viewer who never opened
-that list watched the music video at the lowest quality the video offered. The
-other half was a cliff: a size the phone refused fell straight to that same 360p
-row, so one refused 1080p cost the 720p picture as well.
+**85.2.2 made FULL HD the size a viewer lands on, and the tab kept leaving it for
+360p.** The ladder was not the problem; the failure road was. Two things in it
+treated trouble as a refusal.
 
-**Full HD unless you say otherwise.** A viewer who has never chosen a size opens
-at 1080p, and a video with no 1080p opens at the largest size under it rather than
-at the smallest. AUTO is still a choice and is stored as one, so "never chose" and
-"chose AUTO" are no longer the same answer, and a size picked by hand is still kept
-for the next video. The 1080p row in the list is marked as the default, so the
-size the picture landed on has a reason on the screen.
+**A dropped connection changed the size.** A network error arrives as a media
+error like any other (`MediaError` code 2), and the road answered it by walking one
+size down - and after the first demotion the next step is the muxed 360p row. So a
+signal that was busy for a second, or a phone that lost a bar in a lift, demoted a
+1080p picture to 360p and left it there, silently, for the rest of the song. A
+drop now restarts **the same source, at the same second, once**, and does not touch
+the size. Only the phone actually refusing the picture - code 3, the decoder, and
+code 4, the container - walks the ladder. The footer says `The connection dropped
+(...). The same size is starting again.` so a stutter is not a mystery either.
 
-**A refusal steps down one size, not to the floor.** The road is unchanged - two
-more codecs at the height that was asked for, and only then smaller - but the step
-after that is now the rung directly under the one that failed: 1080p refused is a
-720p picture, a second refusal takes the best one-stream size. The footer still
-names the size it landed on, and the size that was chosen is still remembered for
-the next video, because it was this phone that could not open it.
+**The nine-second watch called a slow picture dead.** `scVideoWatch` was written
+for the smallest row: nine seconds after a source was attached, if nothing had
+played, it walked the same road a refusal takes. A 1080p row is three or four times
+the bytes of the 360p row, and on a busy signal it reached its first frame well
+after nine seconds - so it was demoted while it was working. The deadline now
+scales with the weight of the size (`scVideoWatchMs`: 9s plus 300ms per megabyte,
+capped at 21s), and the check asks whether anything is arriving at all: a picture
+with anything buffered, or one the element is still fetching (`networkState` 2),
+is left alone. Only a source that has stopped with nothing buffered is walked.
 
-**The list says why the picture is not the size expected.** A video that tops out
-at 720p now says so in the size list, where the sizes are, instead of leaving it to
-be worked out from a list whose largest row is smaller than the default. The note
-that explains a paired soundtrack sits under the same line.
+**A demotion still says where it went.** One step down on the first refusal, the
+best one-stream size on the second, the footer naming the size and the reason, and
+the size the owner chose kept for the next video - 85.2.2's road, unchanged. What
+changed is when it is entered at all.
 
-**The sound of 85.2.1 is untouched.** One audible element, the picture as the
-clock, its own voice held to a tenth of a second by trimming its rate, and the
-song unable to start underneath the film. Nothing in the app half changed, so the
-tab still publishes the flag and the four guards still read it.
-
-`dev/patch-8522.py` replaces the module as one slice (from the 85.2.1 banner to the
-shelf comment that follows it) with `dev/video-8522.js`, checks that the four
-85.2.1 guards are still on the page, then moves the version line, the cache name,
-one new notes entry and `updates.json` to 85.2.2. A second run is a no-op.
+`dev/patch-8523.py` replaces the module as one slice (from the 85.2.2 banner to the
+shelf comment that follows it) with `dev/video-8523.js`, then moves the version
+line, the cache name, one new notes entry and `updates.json` to 85.2.3. A second run
+is a no-op.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only: no native change, so the APK is not rebuilt.
 
 ### What was checked, and what was not
 
-Checked: `dev/check-8522.cjs` runs the module that ships against a stubbed DOM and
-passes 107 assertions. The ones this release is about: with nothing stored the tab
-asks for 1080p and opens on the 1080p rung, muted, with its own track as the voice
-and the song parked; a ladder without 1080p opens at 720p; `scVideoRungBelow`
-answers 720p under 1080p and nothing under the smallest rung; the list marks
-1080p as current and as the default and says AUTO is the best one-stream size; a
-stored 720 opens at 720, a stored `auto` asks for AUTO and not FULL HD, and an
-empty store asks for 1080p again; a refused 4K lands on 1440p and says so, a
-second refusal takes the 720p one-stream row and unmutes the picture, and picking
-a size by hand clears the step-down so the road starts again; a video whose only
-row is a 360p adaptive one says in the list that it has no 1080p and tops out at
-360p. The 85.2.1 assertions still pass unchanged - the voice waiting for a running
-frame, the trimmed drift, the pause, the buffer, the seek, one sound, and closing
-handing the song back at the picture's second.
-
-`python3 dev/patch-8522.py --check` exits 1 before and 0 after, a second run prints
+Checked: `dev/check-8523.cjs` runs the module that ships against a stubbed DOM and
+passes 117 assertions, the 107 of 85.2.2 included. The ones this release is about:
+a media error at code 2 on a 1080p picture **keeps 1080p**, re-attaches the same
+URL, holds the second it was on (84s), sets the retry marker once, and puts the
+connection on the footer rather than the transient line; a second drop with no
+other codec to try walks exactly one size down (1080p to 720p); a decode refusal
+(code 4) still steps down and still names the size; `scVideoWatchMs` gives a 24 MB
+picture 16200ms rather than 9000 and caps a 400 MB one at 21000; a picture that is
+buffering (`networkState` 2, 0.6s buffered) keeps its size through the watch, and
+one that has stopped with nothing buffered steps down one. The 85.2.2 default is
+asserted unchanged - a fresh install opens 1080p, AUTO is still a stored choice, a
+video without 1080p opens at 720p and says so - and so is the 85.2.1 sound lock.
+`python3 dev/patch-8523.py --check` exits 1 before and 0 after, a second run prints
 `already on the page`, all 7 inline scripts of the patched page parse, the module
-on the page is byte-identical to `dev/video-8522.js`, and the sound flag is still
-read in all five places. Bundles reached their fixed point in three passes and both
-channels verify with `--check`.
+on the page is byte-identical to `dev/video-8523.js`, and the sound flag is still
+read in all five places. Bundles reached their fixed point and both channels verify
+with `--check`.
 
-Not checked: no phone, and no browser session drove this screen in this session.
-What is proven is which rung a fresh install asks for, which rung a refusal lands
-on and what the list says - as code and arithmetic, not as a 1080p picture on a
-device. Whether a particular phone decodes a particular 1080p row, and how long
-the switch takes on a real radio, are for the owner.
+Not checked: no phone, and no browser session drove this screen, so what is proven
+is which error codes change the size and which do not, and the arithmetic of the
+watch - not that a particular phone now holds 1080p through a bad minute. If a
+picture still lands on a smaller size, the footer now names the size it went to and
+the reason, and that line is the thing to send back.
