@@ -19876,6 +19876,31 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.7 - THE SONG ON THE SCREEN IS THE SONG IN THE PICTURE, AND A WAY BACK ─
+  // TWO REPORTS, AND THE FIRST ONE IS NOT THE LADDER AND NOT THE SIZES. The tab
+  // could end up showing one song's film while another song played, and then stay
+  // there for the rest of that song.
+  //
+  // A VIDEO IS FOUND IN TWO ROUND TRIPS. The search answers, then the player
+  // answers, and the queue can move in between - a song that ends while the tab is
+  // looking for its film hands over to the next one. If the first song's answer
+  // arrived after the second song had started, it loaded anyway. And because the
+  // tab had already recorded the *new* song as the one it was on, the tick saw no
+  // change to follow and left the old film on the screen. That is exactly how a
+  // music video tab shows something that is not the song you are on.
+  //
+  // THAT ANSWER IS NOW HISTORY. Every start carries a number (`startSeq`) and the
+  // song's key; when a lookup comes back, the tab asks whether that number is still
+  // the current one AND whether that song is still the song being played. If either
+  // moved, the answer is dropped and the tick's follow loads the film for the song
+  // that is actually on. Closing the tab bumps the same number, so a lookup that
+  // lands after the tab is gone cannot attach a source to a page with no picture on
+  // it - and, on a size with sound, cannot hold the song with it either.
+  //
+  // AND A WAY BACK. The only exit was a cross at the far end of the header, which on
+  // a phone is the one corner a thumb does not reach. A back arrow now leads the
+  // row, on the glass in landscape too, and it leaves the tab the same way the close
+  // cross does: the song picks up at the second the picture was on.
   // ─── 85.2.6 - THE PICTURE IS WHERE THE SONG IS, AND A SONG WITHOUT ONE HAS A COVER ─
   // FOUR REPORTS, AND NOT ONE OF THEM WAS THE LADDER. The size list offered rows
   // this phone cannot open, and offered the same row again for the next song after
@@ -20071,6 +20096,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     '<path d="M9.7 9.5l4.5 2.5-4.5 2.5z" fill="currentColor"/></svg>';
   var SC_VICON_CHECK = '<svg class="sv-qc" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">' +
     '<path d="M5 12.6l4.2 4.2L19 7.2" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SC_VICON_BACK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<path d="M14.6 5.4 8 12l6.6 6.6" fill="none" stroke="currentColor" stroke-width="2.1" ' +
     'stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   // ── the ladder -------------------------------------------------------------
@@ -20273,6 +20301,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scVideoHead button{width:34px;height:34px;border-radius:999px;border:1px solid var(--line);',
       'background:rgba(255,255,255,.05);color:var(--ink-dim);font-size:14px;line-height:1;cursor:pointer;flex:0 0 auto}',
       '#scVideoHead button:active{transform:scale(.94)}',
+      // A WAY BACK SITS FIRST. In portrait the title takes the middle of the row and
+      // the arrow leads it; in landscape the title is gone, so the auto margin is
+      // what keeps the arrow on the left and the sizes and the cross on the right.
+      '#scVideoHead #scVideoBack{margin-right:auto;color:var(--ink)}',
+      '#scVideoHead #scVideoBack svg{display:block}',
       '#scVideoStage{position:relative;flex:1 1 auto;min-height:0;display:grid;place-items:center;border-radius:18px;',
       'overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.09);box-shadow:0 24px 60px rgba(0,0,0,.55);',
       'touch-action:manipulation}',
@@ -20406,6 +20439,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     d.id = 'scVideoBackdrop';
     d.innerHTML =
       '<div id="scVideoHead">' +
+        '<button type="button" id="scVideoBack" title="Back" aria-label="Back">' + SC_VICON_BACK + '</button>' +
         '<div class="sv-t"><b id="scVideoTitle">Music video</b><i id="scVideoSub"></i></div>' +
         '<button type="button" class="sv-chip" id="scVideoChip" style="display:none;" aria-label="Video quality">360p</button>' +
         '<button type="button" id="scVideoClose" title="Close" aria-label="Close">&#215;</button>' +
@@ -20442,6 +20476,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
     d.addEventListener('click', function(e){ if(e.target === d) scVideoClose(); });
     var c = scVideoEl('scVideoClose'); if(c) c.addEventListener('click', scVideoClose);
+    // The arrow is the same way out as the cross, in the corner a thumb reaches.
+    var bk = scVideoEl('scVideoBack');
+    if(bk) bk.addEventListener('click', function(e){ e.stopPropagation(); scVideoClose(); });
     var n = scVideoEl('scVideoNext'); if(n) n.addEventListener('click', function(e){ e.stopPropagation(); scVideoNext(); });
     var l = scVideoEl('scVideoLand'); if(l) l.addEventListener('click', function(e){ e.stopPropagation(); scVideoLandscape(); });
     var p = scVideoEl('scVideoPlay'); if(p) p.addEventListener('click', function(e){ e.stopPropagation(); scVideoTap(); });
@@ -21541,8 +21578,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.retries = 0;
     scVideoState.want = scVideoWant();
     return scVideoPlayer(cand.videoId).then(function(r){
-      scVideoState.busy = false;
+      // ONLY THE LOAD THAT IS STILL CURRENT MAY UNLOCK THE TAB. A stale answer used
+      // to clear the flag while the film that is on was still being looked for.
       if(seq !== scVideoState.loadSeq) return false;
+      scVideoState.busy = false;
+      // AND THE SONG IT WAS LOOKED UP FOR HAS TO STILL BE THE ONE ON. The lookup in
+      // `scVideoStart` is guarded as it resolves; this is the same question asked of
+      // the player, which is the second round trip and the slower one.
+      var onNow = scVideoTrack();
+      if(scVideoState.songKey && onNow && String(onNow.key || '') !== String(scVideoState.songKey)) return false;
       if(!r || !r.rungs || !r.rungs.length){
         scVideoSpin(false);
         // NOTHING TO PLAY AT ALL: the cover, not a black panel with a line on it.
@@ -21597,12 +21641,29 @@ function startLyricsAutoScroll(keepPos, noReset) {
     });
   }
 
+  // ── the song this picture is for ---------------------------------------------
+  // THE SONG HAS TO STILL BE THE ONE ON THE SCREEN. A video is found in two round
+  // trips - the lookup, then the player - and the queue can move in that time. An
+  // answer that comes back for the song the queue has already left used to load
+  // anyway, and because the tab had recorded the new song as the one it was on, the
+  // tick saw nothing to follow: the wrong film then stayed up for the whole song.
+  // Every start gets a number, and a continuation whose number is no longer the
+  // current one - or whose song is no longer the one playing - is history.
+  function scVideoStillOn(seq, key){
+    if(seq !== scVideoState.startSeq) return false;
+    if(!key) return true;
+    var now = scVideoTrack();
+    return !now || String(now.key || '') === String(key);
+  }
+
   function scVideoStart(t){
     if(!t){
       scVideoTitle('Music video', '');
       scVideoSay('Play a song first - this tab shows the music video of the song you are on.');
       return Promise.resolve(false);
     }
+    var seq = (scVideoState.startSeq = (scVideoState.startSeq || 0) + 1);
+    var key = String(t.key || '');
     scVideoState.last = t;
     scVideoState.title = t.title || '';
     scVideoState.artist = t.artist || '';
@@ -21622,6 +21683,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoSpin(true);
     if(other) other.style.display = 'none';
     return scVideoSearch(t).then(function(cands){
+      // THE ANSWER HAS TO STILL BE FOR THE SONG THAT IS ON. If the queue moved while
+      // this lookup was out, this is the previous song's film and it does not belong
+      // on the screen - the tick's follow takes the tab to the new song instead.
+      if(!scVideoStillOn(seq, key)) return false;
       if(!cands.length){
         // NOTHING WAS FOUND, SO THE COVER IS THE PICTURE. A file has no video id, and
         // a song without a video is a song, not a broken tab.
@@ -21686,6 +21751,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   function scVideoClose(){
     scVideoState.open = false;
+    // NOTHING THAT WAS STILL LOOKING MAY COME BACK. A lookup or a player answer that
+    // was in flight when the tab closed would otherwise attach a source to a page
+    // that is no longer showing a picture - and hold the song while it did.
+    scVideoState.startSeq = (scVideoState.startSeq || 0) + 1;
+    scVideoState.loadSeq = (scVideoState.loadSeq || 0) + 1;
+    scVideoState.busy = false;
     scVideoTickStop();
     scVideoWatchStop();
     scVideoIdleStop();
@@ -22962,7 +23033,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.6';
+  const APP_VERSION = '85.2.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23672,6 +23743,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.7', date: 'November 19, 2026', title: 'The song on the screen is the song in the picture, and a way back', items: [
+    '[FULL] The music video is always the song you are on. A lookup that answers after the song has changed is dropped, so a slow answer cannot put a different song on the screen.',
+    '[FULL] The music video has a back button. The arrow at the left of its header returns to the app, with the song carrying on from the second the picture was on.'
+  ] },
       { version: '85.2.6', date: 'November 18, 2026', title: 'The picture is where the song is, and a song without one has a cover', items: [
     '[FULL] The size list stops offering what does not work. A height this phone has refused is remembered and marked in the list as one that did not play here, and the tab never chooses it for you again; nothing under 360p is offered unless it is all the video has.',
     '[FULL] The music video opens on the second the song is on, and says which second that was, instead of starting at the top of the clip while the song plays on two minutes in.',
