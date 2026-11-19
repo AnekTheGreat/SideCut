@@ -1,37 +1,44 @@
-## 85.2.4 ({{STAMP}}): an error for a source that is gone is not a refusal
+## 85.2.5 ({{STAMP}}): the clip has to be this song, and half a file is not a source
 
-**1080p still slid back to 360p on the click that asked for it.** The cause was in
-the handler, not the ladder and not the sizes. A size change assigns a new source
-and calls `load()`, which aborts the load that was running. That abort can arrive
-as an `error` event **after** the new source is attached, by which time the element
-has already cleared `media.error` - so `scVideoFailed` ran with no `MediaError` at
-all, took the default wording ("the element could not play this source"), and
-walked the road: an alternate codec at 1080p, then one size down, then the 360p
-row. Two of those events back to back is exactly "click 1080p, end up on 360p".
+**Two reports, one root each.** The tab put someone else's clip on screen for a
+song, and it kept landing on 360p. Neither was a mystery in the code once they were
+read together.
 
-**An error has to be an error.** The handler now requires a real `MediaError` on
-the element, and it has to belong to the source this tab attached: `scVideoAttach`
-records the source it set (`scVideoState.srcNow`) and an event whose element is no
-longer on that source is dropped. A queued abort, a late event from the size
-before, and an `error` with nothing behind it all become no-ops. The one caller
-allowed to act without a `MediaError` is `scVideoWatch`, which passes `true`
-because it is inspecting the element itself rather than reading an event.
+**The catalogue clip was never checked.** A song from the source carries a video
+id, and `scVideoStart` trusted it: one candidate, no search, `NEXT` hidden. When
+the catalogue's clip is right, that is exactly what should happen - but when it is
+a live take, a remix or another song entirely, nothing asked and nothing said, and
+there was no way to walk away from it. A clip is now measured against the song it
+was opened for: if the resolved video's length is more than twenty seconds **and**
+more than a tenth away from the song's, the clip is not trusted. The search runs
+once by artist and title, `scVideoRank` orders the results by length first, and
+those results become `scVideoState.cands` - so the picture that appears is the
+length-matched recording and `NEXT` walks the rest. A clip that matches is played
+exactly as handed over, untouched. If the search finds nothing, the catalogue clip
+still plays and the footer says why.
 
-**A real refusal now names the row.** The footer that says which size the picture
-landed on also names the size and codec that refused it - `This size did not play
-here (this source is not a video the element can open) - 1080p H.264. Now at
-720p.` The failing rung is read before the road changes it, because
-`scVideoApplyRung` has already moved `scVideoState.rung` by the time the footer is
-written.
+**Half a file is not a source.** A player row can carry its own `range` in the URL -
+`&range=0-1023` - because that is what the player asked for when it built the row.
+Handed straight to an element that then makes its own range requests, that URL is a
+partial file, and a partial file is refused with `MEDIA_ERR_SRC_NOT_SUPPORTED`,
+exactly like a phone that cannot decode the sharp size. `scVideoNoRange` strips the
+parameter from every video and audio URL in `take()` and in `scVideoSnd`, so the
+element asks for the bytes it wants. That refusal was indistinguishable from a
+device limit, which is why the picture kept sliding to the one-stream row.
 
-**Everything 85.2.3 and 85.2.2 shipped is otherwise untouched.** A dropped
-connection still restarts the same source at the same second without touching the
-size, the silent-source watch still scales with the size, one step down on the
-first real refusal, FULL HD by default, and the single-sound lock of 85.2.1.
+**And the tab says which page it is.** Two tabs that look identical can be two
+builds after an update, and every report about "still 360p" that arrives while a
+week-old bundle is on the screen costs a release. The size card's header now reads
+`QUALITY · v85.2.5`, from `window.APP_VERSION`, so the number that ships is the
+number on the screen.
 
-`dev/patch-8524.py` replaces the module as one slice (from the 85.2.3 banner to the
-shelf comment that follows it) with `dev/video-8524.js`, then moves the version
-line, the cache name, one new notes entry and `updates.json` to 85.2.4. A second run
+**When a one-stream row is the floor, it says so.** A demotion that ends on a muxed
+row adds `That is the sharpest size this phone will play here.` - different news
+from a single stumble, and the thing worth knowing before opening the list again.
+
+`dev/patch-8525.py` replaces the module as one slice (from the 85.2.4 banner to the
+shelf comment that follows it) with `dev/video-8525.js`, then moves the version
+line, the cache name, one new notes entry and `updates.json` to 85.2.5. A second run
 is a no-op.
 
 Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
@@ -39,27 +46,27 @@ Bundles on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.js
 
 ### What was checked, and what was not
 
-Checked: `dev/check-8524.cjs` passes 123 assertions, the 117 of 85.2.3 included.
-The ones this release is about: with the element's `error` cleared, a call that is
-what a queued abort looks like at 1080p **changes nothing** - the size stays 1080p
-and no line is written to the footer; an `error` while the element is on a
-different source from the one the tab attached changes nothing either; restoring
-the source and the error makes the very next call step down to 720p and write
-`1080p H.264` into the footer; the silent-source watch still demotes when it finds
-nothing, because it passes `dead`. The 85.2.3 assertions still pass - a network
-drop keeps the size and restarts the same source on the same second, the watch
-gives a 24 MB picture 16200ms and ignores a buffering one - and so do 85.2.2's
-default and 85.2.1's sound lock.
-`python3 dev/patch-8524.py --check` exits 1 before and 0 after, a second run prints
+Checked: `dev/check-8525.cjs` passes 136 assertions, the 123 of 85.2.4 included.
+The ones this release is about: `scVideoNoRange` removes a middle `range` and a
+trailing one, leaves a URL with no range alone, and the 1080p rung the element is
+given has no `range` while its `itag` and `mime` survive; the paired soundtrack
+row is cleaned the same way; the size card carries the app version; a catalogue
+clip that runs 262s for a 210s song is not trusted - the search is asked once, the
+length-matched result (`right`, 209s) is what plays, its title reaches the header
+and `NEXT` is offered - while a catalogue clip that matches (209s for 210s) is
+played as handed over and the search is never asked. The 85.2.4 guard against an
+error with no `MediaError` still holds, so does 85.2.3's retry and watch, 85.2.2's
+FULL HD default and 85.2.1's single sound.
+`python3 dev/patch-8525.py --check` exits 1 before and 0 after, a second run prints
 `already on the page`, all 7 inline scripts of the patched page parse, the module
-on the page is byte-identical to `dev/video-8524.js`, and the sound flag is still
+on the page is byte-identical to `dev/video-8525.js`, and the sound flag is still
 read in all five places. Bundles reached their fixed point and both channels verify
 with `--check`.
 
-Not checked: no phone, and no browser session drove this screen - and the player
-call could not be re-measured from this sandbox either, because the host now
-answers `LOGIN_REQUIRED` to a datacenter address. So what is proven is that an
-error with nothing behind it can no longer resize the picture, and what a real
-refusal says on the screen; whether this particular phone can open a 1080p
-video-only row at all is still unproven. If it still lands on a smaller size, the
-footer now names the row and the codec, and that line is the next thing to read.
+Not checked: no phone, and no browser session drove this screen. The `range` strip
+is proven as text surgery on the URL the element is handed, not as a 1080p frame on
+a device - and the player call still cannot be re-measured from this sandbox, which
+the host answers with `LOGIN_REQUIRED`. So: if the sharp sizes now play, the range
+was the cause; if they still land on the one-stream row, the footer names the row
+and the codec and the size card names the build, and those two lines are what the
+next step needs.

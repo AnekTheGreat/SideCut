@@ -19876,6 +19876,27 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
+  // ─── 85.2.5 - THE CLIP HAS TO BE THIS SONG, AND HALF A FILE IS NOT A SOURCE ─
+  // TWO REPORTS, ONE ROOT EACH. The tab showed someone else's clip for a song,
+  // and it kept landing on 360p. The first was the catalogue: a song that carries
+  // a video id was played without ever asking whether that clip was the same
+  // recording - a live take, a remix, or another song entirely went on screen
+  // with nothing to say so, and NEXT was hidden because there was only one
+  // candidate. The second is the source: a row whose URL carries its own
+  // `range` is half a file, and an element that then asks for its own ranges
+  // cannot open it - which is a refusal that looks exactly like a phone that
+  // cannot decode a sharp size, and lands the picture on the one-stream row.
+  //
+  // THIS SONG, OR ANOTHER SEARCH. A catalogue clip whose length is far from the
+  // song it was opened for (more than twenty seconds and more than a tenth) is
+  // checked against a search by artist and title before it is trusted; the search
+  // is ranked by length, the result becomes the candidate list, and NEXT walks
+  // it. A clip that matches is played exactly as before.
+  //
+  // THE RANGE IS REMOVED. Every video and audio URL is stripped of its `range`
+  // parameter before it reaches an element, so the element can ask for the bytes
+  // it wants. The size list also says which build it is, because two tabs that
+  // look the same can be two different pages after an update.
   // ─── 85.2.4 - AN ERROR FOR A SOURCE THAT IS GONE IS NOT A REFUSAL ─────────────
   // WHAT 85.2.3 STILL GOT WRONG. Every `error` event was read as the size being
   // refused. A size change aborts the load that was running, and that abort can
@@ -19997,7 +20018,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     audioMode: 'song', songWasPlaying: false, startAt: null, resumeAt: null,
     rungs: [], rung: null, want: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null, drops: 0, retries: 0, srcNow: ''
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -20068,9 +20089,21 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(h >= 720) return 'HD';
     return 'SD';
   }
+  // HALF A FILE IS NOT A SOURCE. A player row can carry its own `range` in the
+  // URL, which is what the player asked for; handed to an element that then makes
+  // its own range requests, it is a partial file and the element refuses it. The
+  // parameter belongs to whoever asked, so it is removed here, for the picture and
+  // for its paired track.
+  function scVideoNoRange(u){
+    var s = String(u || '');
+    if(!/^https?:/i.test(s) || !/[?&]range=/i.test(s)) return s;
+    s = s.replace(/([?&])range=[^&]*/i, '$1');
+    s = s.replace(/[?&](?=&|$)/g, '');
+    return s;
+  }
   function scVideoSnd(row){
     if(!row) return null;
-    return { url: row.url || '', mime: row.mime || 'audio/mp4', size: Number(row.size) || 0 };
+    return { url: scVideoNoRange(row.url || ''), mime: row.mime || 'audio/mp4', size: Number(row.size) || 0 };
   }
 
   // One rung per height the answer really offers. Rows of the same height are
@@ -20330,7 +20363,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         '<button type="button" id="scVideoBig" aria-label="Play">' + SC_VICON_BIG + '</button>' +
         '<div id="scVideoSay"></div>' +
         '<div id="scVideoQ" role="dialog" aria-label="Video quality">' +
-          '<div class="sv-qh">QUALITY</div>' +
+          '<div class="sv-qh" id="scVideoQHead">QUALITY</div>' +
           '<div id="scVideoQList"></div>' +
           '<div class="sv-qn" id="scVideoQNote"></div>' +
         '</div>' +
@@ -20663,6 +20696,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ t = a ? (Number(a.currentTime) || 0) : 0; }catch(_eSt){ t = 0; }
     return t;
   }
+  // How long the song is, for the one question a clip has to answer: is this the
+  // same recording? The element knows once it has metadata; the track the tab was
+  // opened on is the fallback for a song that is still starting.
+  function scVideoSongLen(){
+    var a = scVideoAudioEl();
+    try{ var d = a && isFinite(a.duration) ? (Number(a.duration) || 0) : 0; if(d > 0) return d; }catch(_eSl){}
+    try{
+      var t = scVideoState.last;
+      var wire = t ? (Number(t.duration) || Number(t.dur) || Number(t.length) || 0) : 0;
+      if(wire > 0) return wire;
+    }catch(_eSl2){}
+    return 0;
+  }
 
   // One sound at a time: while the picture carries sound of its own - in the
   // stream, or in its own paired track - the song is paused, and the second it
@@ -20708,7 +20754,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           if(mt.indexOf('video/') !== 0) return;
           if(kind === 'muxed' && !/mp4a|opus|vorbis/.test(mt)) return;
         }
-        var u = f.url || '';
+        var u = scVideoNoRange(f.url);
         if(!u || seen[u]) return;
         var size = Number(f.contentLength || f.clen) || 0;
         if(size > 1200 * 1024 * 1024) return;      // nothing this tab will hold
@@ -20822,6 +20868,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoQualityRender(){
     var list = scVideoEl('scVideoQList');
     if(!list) return;
+    // WHICH PAGE IS THIS. Two tabs that look the same can be two builds after an
+    // update, and a report about a tab that is not the one that shipped cannot be
+    // answered. The list says the number it is.
+    var head = scVideoEl('scVideoQHead');
+    if(head){
+      var build = '';
+      try{ build = (typeof window !== 'undefined' && window.APP_VERSION) ? String(window.APP_VERSION) : ''; }catch(_eBld){ build = ''; }
+      head.textContent = 'QUALITY' + (build ? ' \u00b7 v' + build : '');
+    }
     var rungs = scVideoState.rungs || [];
     var cur = scVideoState.rung;
     var auto = !scVideoState.want;
@@ -21230,9 +21285,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoApplyRung(def, true);
       // On the footer, not the transient line: a playing picture clears that one
       // the moment it starts, and this fallback is the thing worth knowing.
-        scVideoFoot('This size did not play here (' + why + ') - ' +
+        // A one-stream row after a paired one is the end of the road, and it is worth
+      // saying so: on a phone that refuses the sharp rows, this is the picture it
+      // will actually play, and that is not the same news as a single stumble.
+      scVideoFoot('This size did not play here (' + why + ') - ' +
         (from ? from.label + ' ' + from.codec : 'that size') +
-        '. Now at ' + def.label + '.');
+        '. Now at ' + def.label + '.' +
+        ((def.muxed && from && !from.muxed) ? ' That is the sharpest size this phone will play here.' : ''));
       return;
     }
     if(scVideoState.via === 'direct'){
@@ -21312,12 +21371,39 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scVideoSpin(false); scVideoSay('This one has no stream the app can reach. NEXT tries another result.');
         return false;
       }
-      scVideoState.rungs = r.rungs;
-      var rung = scVideoRungFor(r.rungs, scVideoState.want);
-      if(r.title) scVideoTitle(r.title, cand.owner || '');
-      scVideoApplyRung(rung, false);
-      scVideoTickStart();
-      return true;
+      scVideoState.vidLen = Number(r.length) || 0;
+      var apply = function(){
+        scVideoState.rungs = r.rungs;
+        var rung = scVideoRungFor(r.rungs, scVideoState.want);
+        if(r.title) scVideoTitle(r.title, cand.owner || '');
+        scVideoApplyRung(rung, false);
+        scVideoTickStart();
+        return true;
+      };
+      // IS THIS EVEN THIS SONG. A catalogue clip is played as handed over, which is
+      // right when the catalogue is right and is someone else's video when it is
+      // not. A length that is more than twenty seconds and more than a tenth away
+      // from the song is a different recording; the search is asked once, ranked by
+      // length, and the answer becomes the list NEXT walks.
+      var songLen = scVideoSongLen();
+      var far = !!(cand.own && songLen > 0 && scVideoState.vidLen > 0 &&
+                   Math.abs(scVideoState.vidLen - songLen) > Math.max(20, songLen * 0.1));
+      if(!far || scVideoState.wrongTried) return apply();
+      scVideoState.wrongTried = true;
+      var offNote = 'That clip runs ' + scVideoMMSS(scVideoState.vidLen) + ' for a ' +
+        scVideoMMSS(songLen) + ' song';
+      scVideoFoot(offNote + ' - looking for the right one.');
+      return scVideoSearch(scVideoState.last).then(function(list){
+        if(!list || !list.length){
+          scVideoFoot(offNote + ', and the search found nothing better.');
+          return apply();
+        }
+        scVideoState.cands = list;
+        scVideoState.ci = 0;
+        scVideoState.wrongTried = false;      // what loads next is a search result
+        var nx = scVideoEl('scVideoNext'); if(nx) nx.style.display = list.length > 1 ? '' : 'none';
+        return scVideoLoad(list[0]);
+      });
     }).catch(function(){
       scVideoState.busy = false;
       scVideoSpin(false);
@@ -21336,8 +21422,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.title = t.title || '';
     scVideoState.artist = t.artist || '';
     var other = scVideoEl('scVideoNext');
+    scVideoState.wrongTried = false;
     if(t.videoId){
-      scVideoState.cands = [{ videoId: t.videoId, title: t.title || '', owner: t.artist || '' }];
+      // `own` marks the clip the catalogue handed over: it is the one that has to
+      // prove it is this song, because nothing else chose it.
+      scVideoState.cands = [{ videoId: t.videoId, title: t.title || '', owner: t.artist || '', own: true }];
       scVideoState.ci = 0;
       if(other) other.style.display = 'none';
       return scVideoLoad(scVideoState.cands[0]);
@@ -22684,7 +22773,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.2.4';
+  const APP_VERSION = '85.2.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -23394,6 +23483,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '85.2.5', date: 'November 18, 2026', title: 'The clip has to be this song, and half a file is not a source', items: [
+    '[FULL] The music video tab checks the clip it is given. A song from the catalogue carries a video id, and that clip used to play no matter what it was - a live take, a remix, or another song entirely - with NEXT hidden because there was only one candidate. A clip whose length is far from the song is now checked against a search by artist and title before it is trusted, and the results become the list NEXT walks.',
+    '[FULL] A size that would not open may not have been the phone at all: a player row can hand over a URL with its own range on it, which is half a file and something an element cannot play. That parameter is removed before the picture and its own soundtrack see the URL, so a sharp size has a real chance here.',
+    '[FULL] The size list now says which build it is, so a tab that behaves like an older one can be told apart from the page that shipped, and the footer says when the picture had to settle for a smaller size.'
+  ] },
       { version: '85.2.4', date: 'November 18, 2026', title: 'An error for a source that is gone is not a refusal', items: [
     '[FULL] Clicking 1080p no longer slides back to 360p. A size change cancels the load that was running, and that cancellation can arrive as an error after the new size has already started - the tab read it as the new size being refused and walked one size down, twice, so a tap on 1080p ended on the 360p row. An error now counts only when the phone reports a real media error on the size that is actually playing.',
     '[FULL] When a size really is refused, the footer names the size and the codec the phone could not open, so a smaller picture is never a mystery.',
