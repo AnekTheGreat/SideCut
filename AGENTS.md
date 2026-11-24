@@ -1,5 +1,75 @@
 # SideCut — repository memory
 
+## 85.3.12 (November 24, 2026): a sharp size is judged while it is showing, and it is judged once
+
+**The owner's report**: "now the higher quality videos dont work". One release after the rate
+was first measured, the sharp sizes were gone - and the guard was the reason. It was asked the
+wrong question, twice.
+
+**IT MEASURED THE FETCH, NOT THE PHONE.** `scVideoPerfSample` skips a paused film, an ended
+one, a background one and a scrub - and then counted frames whether or not the element had any
+data for its own second. A media element is not paused while it fills its buffer. So the first
+seconds of a sharp size - exactly the seconds a phone spends fetching its first megabyte,
+which 85.3.8's reader and 85.3.9's 16 MB window make longer, not shorter - read as
+`fps = 0` for two windows in a row, and the size was given up before it had shown a single
+frame. A sharp size on a slow connection could not survive its own startup. The window is now
+read only while the picture is showing: `v.readyState < 2` or `v.seeking` restarts it (the
+window is cleared, not judged) instead of counting it. A size that never arrives is still
+somebody's business - the silent-source watch, which has its own two windows - but it was
+never the rate's.
+
+**AND IT COULD WALK THE WHOLE LADDER.** `scVideoSlow` refused only the height it had already
+taken away (`slowH[h]`), so a bad pair of windows at the size it landed on took the next one
+too. On a phone whose whole page runs slowly - the canvas stage, the scrim, the animations,
+not the decoder - every size reads as slow, and the picture walked 4K to 1080p to 720p to 480p
+to 360p, a step every five seconds, marking each height `deadH` on the way, which is also the
+list the pick and the landing read. That is the "tries every quality" behaviour 85.3.6 was
+supposed to have ended, arriving through a different door. The rate now gives up **one size
+per film** (`scVideoState.slowDone`, cleared by `scVideoLoad` with `slowH`): a 4K picture that
+cannot keep up lands on FULL HD once and stays there; if FULL HD is still short of frames the
+picture stays on FULL HD and the size list is the way down. The upscaler may still come off
+after the step - it costs the picture nothing and is never the wrong answer - but no second
+size is taken away.
+
+Nothing about the ask changed: `SC_VQ_FLOOR` is still 1080, a hand-picked size is still the
+size that is tried, the demotion is per film (so the stored choice is not lowered), and a
+hand-picked 4K that cannot keep up still lands on FULL HD exactly as 85.3.9 shipped it.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85312.cjs` passes **34 assertions, 0 failed** - the sampler, the
+verdict and the step back cut out of `index.html` by name and brace and run in a vm against a
+fake element and a fake clock. The ones this release is about: six windows of a picture with
+no data for its own second produce **no verdict, no footer line and no size change**, and the
+same for a source that has not loaded at all and for a seek; a picture showing 2 fps at
+readyState 4 is still measured and still loses the upscaler first; the gate is read before the
+frames are counted. A 4K picture at 2 fps lands on FULL HD **once**, and eight more seconds of
+bad windows take no second size away, land on nothing and say nothing further, with `deadH`
+holding only `2160`; a FULL HD picture is landed once and not again at the size it landed on;
+a tap on HD+ keeps the upscaler and still gets its one step; a film that has spent its step
+still loses the upscaler if it was on, and takes no size; the latch is read before the
+function touches anything, it is cleared by `scVideoLoad` beside `slowH`, and the state
+carries it. All 10 inline scripts parse, the page and the shell cache are 85.3.12, the notes
+entry is above 85.3.11 and carries no word the Play channel filters. The 85.3.11 (**22**,
+with its version assertion relaxed to "this release or newer"), 85.3.10 (**32**), 85.3.9
+(**46**), 85.3.8 (**57**), 85.3.7 (**66**) and 85.3.6 (**74**) sets still pass - 85.3.9's own
+suites are what prove the guard still catches a real 2 fps picture, since none of its
+assertions were rewritten. Both OTA channels rebuilt to a fixed point and verify with
+`--check`.
+
+Not checked: **no phone.** Nothing was watched, so what is proven is that a window taken
+while the element is fetching is no longer a verdict and that the ladder cannot be walked -
+not that a particular phone's sharp row now plays. `readyState` is the element's own answer
+about its data, so a phone whose WebView reports 2 or better while it is starving the decoder
+is still measured as slow - that is the case this release does not distinguish, and if it
+happens the picture steps back once instead of repeatedly. And a film that is genuinely too
+heavy at FULL HD now stays on FULL HD at whatever rate it shows, by design: the footer names
+the rate and the size list is one tap away.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1328789 bytes**, `ota-play/updates.json` **1328803 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.11 (November 24, 2026): the library opens on the view you set, and the glyph above it agrees
 
 **The owner's report**: "if I have the default set to albums it should open to albums and the

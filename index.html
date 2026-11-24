@@ -20013,7 +20013,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     suspect: false, refusedH: [], streamFor: null, streamUrl: '', streamBusy: false, watchMore: 0,
     // 85.3.9 - the frames the picture is really showing, and the heights that could not
     // keep up here. A size that plays at two frames a second is not a picture that plays.
-    fps: 0, perf: null, perfBad: 0, slowH: {}, fxBlocked: false, fxManual: false
+    fps: 0, perf: null, perfBad: 0, slowH: {}, fxBlocked: false, fxManual: false,
+    // 85.3.12 - one size given up for the rate per film, not a walk down the ladder.
+    slowDone: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -21864,6 +21866,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoPerfSample(){
     var st = scVideoState, v = scVideoEl('scVideoEl');
     if(!st.open || st.bg || !v || !v.src || v.paused || v.ended || st.scrubbing){ st.perf = null; return; }
+    // A PICTURE THAT HAS NOT GOT ITS DATA HAS NOT BEEN SLOW, IT HAS BEEN WAITING. The element
+    // is not paused while it fills its buffer, so without this the first seconds of a sharp
+    // size - the seconds a phone spends fetching its first megabyte - were read as a rate of
+    // zero and the size was given up before it had shown a frame. A size that never arrives
+    // is the silent-source watch's business; the rate is asked about a picture that is showing.
+    if(Number(v.readyState) < 2 || v.seeking){ st.perf = null; return; }
     var now = 0;
     try{ now = Date.now ? Date.now() : new Date().getTime(); }catch(_eNow){ now = 0; }
     var frames = scVideoFrames(v);
@@ -21889,6 +21897,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(st.perfBad < SC_VQ_PERF_ROUNDS) return;
     st.perfBad = 0;
     st.fps = metered ? (Math.round(fps * 10) / 10) : 0;
+    // ONE SIZE FOR THE RATE, AND THAT IS THE ANSWER FOR THIS FILM. The ladder is not walked:
+    // a phone whose whole page runs slowly reads every size as slow, so two bad windows at
+    // each rung took a 4K picture to the bottom of the list in half a minute and left the
+    // sizes above it marked as dead behind it. The upscaler may still come off - that costs
+    // the picture nothing and is never wrong - but no second size is taken away.
+    if(st.slowDone){
+      if(st.fxOn && !st.fxBlocked && !st.fxManual){ st.fxBlocked = true; scVideoFxApply(); }
+      return;
+    }
     // THE UPSCALER IS THE CHEAPEST THING TO GIVE UP, SO IT GOES FIRST. Four draws of the
     // whole stage for every frame is a real cost and a sharp size does not need the sharpen
     // at all - if the rate comes back with it off, the size was never the problem. A tap on
@@ -21909,8 +21926,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoSlow(){
     var st = scVideoState, from = st.rung;
     if(!from || !Number(from.h) || !st.open) return false;
+    if(st.slowDone) return false;                       // one size a film, not a walk down the list
     if(st.slowH[Number(from.h)]) return false;          // this height was given up on already
     st.slowH[Number(from.h)] = 1;
+    st.slowDone = 1;
     var why = from.label + ' was showing ' + scVideoRateText() + ' on this phone.';
     if(Number(from.h) > Number(SC_VQ_FLOOR)){
       var to = scVideoRungFor(scVideoLive(st.rungs || []), SC_VQ_FLOOR);
@@ -22694,6 +22713,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // EVERY FILM IS MEASURED AGAIN. A size too slow for one recording says nothing about the
     // next, and the upscaler a slow film lost comes back with the new one.
     scVideoState.slowH = {};
+    scVideoState.slowDone = 0;              // and it may give up one size again
     scVideoState.fxBlocked = false;
     scVideoState.fxManual = false;
     scVideoPerfReset();
@@ -24235,7 +24255,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.11';
+  const APP_VERSION = '85.3.12';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24945,6 +24965,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.12', date: 'November 24, 2026', title: 'A sharp size keeps its picture: the rate is measured while the film is showing, and steps back once', items: [
+      'A picture that has not got its data yet is no longer read as a slow one: the rate is only measured while the film is actually showing, so the first seconds of a sharp size on a slow connection can no longer cost it the picture.',
+      'The measurement gives up one size per film, not one per window: a 4K picture that cannot keep up lands on FULL HD once and stays there, instead of being walked down the list every few seconds.',
+      'The size list stops marking heights that were never on screen long enough to be judged.'
+    ] },
     { version: '85.3.11', date: 'November 24, 2026', title: 'The library opens on the view you set, and the glyph above it says the same thing', items: [
       'The library icon now follows the Default view setting: a library set to open on Albums opens on Albums with the Albums glyph lit, instead of lighting whichever page came first.',
       'Switching between Songs, Playlists and Albums inside the library moves the lit glyph with the view, so the icon above the list never describes a different page.',
