@@ -1,5 +1,85 @@
 # SideCut — repository memory
 
+## 85.3.7 (November 24, 2026): a size is checked before it is shown, and the picture is never left empty
+
+**The owner's report**: "the video streams keep coming empty with any other video quality -
+360p". Every release since 85.0 had assumed a row on the size ladder was a picture the
+element could open. The report is what that assumption costs: above the one-stream row the
+same answer is often a source this phone will not serve (a music upload's adaptive copies
+are capped at their first megabyte - the same cap `scStreamUsable` already probes for - and
+an address a host answers for the bridge and not for a media tag is refused by the
+element), and 85.3.6 had removed the road down, so a refused FULL HD left the frame empty
+for the whole song. 360p, the progressive muxed row, was the only picture that came up.
+
+**A SIZE IS ASKED BEFORE IT IS SHOWN.** New `scVideoProbe(rung)` asks the reader the
+downloader uses - one two-byte range, the probe `scStreamUsable` already makes - whether
+this source serves this row here. A muxed row is never asked (it is the row that has always
+played), a blob is never asked, and with no native reader the answer is "not known" and the
+element stays the judge, so a browser behaves exactly as before. `scVideoProbes` races every
+ask against `SC_VQ_PROBE_MS` (2.5 s), so a slow reader cannot hold the film in the spinner.
+
+**AND THE SHARPEST SIZE THAT ANSWERS IS THE SIZE.** New `scVideoPick(rungs, want)` probes
+the asked-for size first and then the sizes under it, all at once: the first that answers is
+the size. It never ascends past the ask, it reports the heights that refused back to the
+caller (`refused`), and when nothing answers the ask is kept and the failure road decides -
+guessing a smaller one there would be the walk 85.3.6 took out. `scVideoLoad`'s `apply()` and
+a hand pick in `scVideoQualityChoose` both go through it now, and a picture that landed
+lower than the ask names the size that did not answer, in the footer and (through `deadH`)
+in the list.
+
+**ONE MOVE, NOT A WALK, AND NEVER AN EMPTY FRAME.** `scVideoFailed` no longer steps down a
+rung or leaves the size on an empty stage: the refused height is marked in the list and
+`scVideoLand` attaches the sharpest size under it that still answers the probe, in one jump.
+The size worth keeping (FULL HD and up) is still read into a blob first when the reader can
+hold the whole file. That read is now gated on `scVideoReadCap()` - the reader's own 40 MiB
+ceiling - because 85.3.6's read compared the size with 64 MiB, read at most 40, refused the
+short file and printed **"the video came back empty"** about a stream that was there; that
+sentence and its dead end are gone, and a film too large to hold is named as too large and
+sent to a size that streams. `scVideoRescueDown` says "the read came back with nothing" and
+lands instead of saying "stepping down" and stopping.
+
+`SC_VQ_FLOOR` stays as where the picture tries to open and as the "never ascend past" line,
+but it is no longer a wall the picture cannot leave: a size that will not play here is
+replaced by a size that a probe proves does.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1320586 bytes**, `ota-play/updates.json` **1320601 bytes**. Page-only: no native change,
+so the APK is not rebuilt.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-8537.cjs` passes **64 assertions, 0 failed** and the 85.3.6 set
+(`dev/check-8536.cjs`) still passes **74, 0 failed** with the three assertions whose
+contract this release changed rewritten (a refused size is marked in the list now, the
+failure road attaches nothing itself, and the stage's "not moved to a smaller size" line is
+"no smaller size for this video"). Every function is cut out of `index.html` by name and
+braces and run in a vm. The ones this release is about: a 1080p row that answers is the size
+that plays; a 1080p row that refuses lands on 720p, which is the very next size asked; when
+the sharp sizes refuse, the one-stream row wins without ever being asked; when nothing
+answers the ask is kept and every refused height is named; a browser asks nothing and keeps
+the ask; a pick below the top never lands above it; a height already marked dead is skipped;
+a probe that never answers does not hold the picture past the deadline. A size that dies
+mid-film lands on the sharpest size that still answers, marks both the dead height and the
+ones that refused on the way, and says where it landed; when nothing under it answers, no
+size is applied and the screen says so. The failure road hands the refusal to that landing
+with the size and codec that died, marks the height, reads a holdable sharp size once and
+only once, never reads a 58 MB film the reader cannot hold, and no longer says "came back
+empty". The reader is never asked for more than `scVideoReadCap()`, and a read that comes
+back with nothing lands on a smaller size instead of ending on an empty frame. All 10 inline
+scripts of the page parse; the page and the shell cache are both 85.3.7; the notes carry the
+entry. Both OTA channels rebuilt to a fixed point (`pass 3: 1320586 -> 1320586`) and verify
+with `--check`.
+
+Not checked: no phone, no emulator and no live player call from this sandbox. What is proven
+is that the verdicts this code reads produce the sizes it lands on and the lines it writes,
+not that a particular 1080p row is served or refused on a particular phone. If a source does
+serve the sharp row, the picture now opens on it; if it does not, the picture lands on the
+sharpest size that does and says which one did not, instead of an empty frame - and a phone
+whose reader answers a probe and then stalls on the film still falls to the landing through
+the silent-source watch. Which of those two a given music upload does is unmeasured here:
+the probe is the app asking the source, and its answer is the one thing this release does not
+have.
+
 ## 85.3.6 (November 23, 2026): the words follow the sound, and the picture stays at FULL HD
 
 **The owner's report**: the lyrics were "all out of wack" and had to be clear and on the

@@ -19980,7 +19980,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     pendingKey: '', lastLoad: 0, voice: null,
     fxOn: false, fxRaf: 0,
     // 85.3.6 - the hand-off while the app is away, and the AI-tuned upscale.
-    bg: null, aiTimer: null, aiAsked: '', aiEdge: 0, aiContrast: 0, aiSaturate: 0
+    bg: null, aiTimer: null, aiAsked: '', aiEdge: 0, aiContrast: 0, aiSaturate: 0,
+    // 85.3.7 - which size answers, and which of those asks is still the current one.
+    landSeq: 0, pickSeq: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -19992,10 +19994,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_IDLE_MS_PORTRAIT = 3200;       // the mini bar steps aside in portrait too
   var SC_VQ_FOLLOW_MS = 2500;              // a song change cannot reload films faster than this
   var SC_VQ_VOICE_MAX = 16 * 1024 * 1024;  // the film's own audio row, read for the equalizer
+  var SC_VQ_PROBE_MS = 2500;               // a probe that has not answered by then is not a verdict
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
   var SC_VFX_AMOUNT = 0.6;                 // how much of the frame's own edges comes back
   var SC_VFX_BLUR = 'blur(1px)';           // the copy the edges are taken from
-  var SC_VQ_FLOOR = 1080;                  // the picture is never walked under FULL HD
+  var SC_VQ_FLOOR = 1080;                  // FULL HD is where the picture tries to open, and is never ascended past
   var SC_VFX_AI_KEY = 'scVideoAiTune';     // one AI-read recipe per video, kept on the device
   // THE SIZES A VIDEO CAN HAVE. Whatever height a row reports is read as the nearest
   // one of these, so the list is the ladder a viewer knows instead of a number the
@@ -21514,6 +21517,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
         lines.push('This video has no ' + scVideoSizeLabel(scVideoState.want) +
                    ' - it tops out at ' + scVideoSizeLabel(top) + '.');
       }
+      var offRows = rungs.filter(function(r){ return r && scVideoDead(r.h); });
+      if(offRows.length) lines.push('A size marked did not play here is one this source would not serve on this phone - the picture lands on the sharpest size that does.');
       if(paired) lines.push('Above the one-stream sizes the picture and the same video soundtrack arrive as two streams and are played together.');
       note.style.display = lines.length ? '' : 'none';
       note.textContent = lines.join(' ');
@@ -21535,7 +21540,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var r = scVideoRungFor(scVideoState.rungs, h);
     if(!r) return;
     if(scVideoState.rung && r.h === scVideoState.rung.h){ scVideoQualityMark(); return; }
-    scVideoApplyRung(r, true);
+    // A SIZE PICKED BY HAND IS ASKED THE SAME QUESTION. This is the one place a viewer can
+    // insist on a size, so a pick this source will not serve is named on the footer and the
+    // picture lands on the sharpest size that answers - instead of going black on the pick.
+    var token = (scVideoState.pickSeq = (scVideoState.pickSeq || 0) + 1);
+    var asked = r;
+    scVideoPick(scVideoState.rungs, h).then(function(pick){
+      if(token !== scVideoState.pickSeq || !scVideoState.open) return;
+      (pick.refused || []).forEach(function(hh){ if(hh) scVideoState.deadH[hh] = 1; });
+      var rung = pick.rung || asked;
+      scVideoApplyRung(rung, true);
+      if(Number(rung.h) !== Number(asked.h)){
+        scVideoFoot(asked.label + ' is not served here for this video' +
+          ((pick.refused || []).length ? ' (' + pick.refused.map(scVideoSizeLabel).join(', ') + ' did not answer)' : '') +
+          ' - playing ' + rung.label + ', the sharpest size that opens here.');
+      }
+    }).catch(function(){ scVideoApplyRung(asked, true); });
   }
 
   // WHERE THE PICTURE CAME IN. A clip that opens two minutes into a song has to say
@@ -21544,6 +21564,109 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var at = Number(scVideoState.openedAt) || 0;
     if(at < 3) return '';
     return ' \u00b7 Started at ' + scVideoMMSS(at) + ', where the song is.';
+  }
+
+  // ── what a size will actually serve -----------------------------------------
+  // A ROW ON THE LADDER IS NOT A PICTURE THAT PLAYS. Every release since 85.0 assumed the
+  // size a row reported was a size the element could open, and the owner's report is what
+  // that assumption costs: above the one-stream row the same answer is often a stream this
+  // source will not serve (the adaptive copies of a music upload are capped at their first
+  // megabyte, and an address the host answers for a bridge and not for a media tag is
+  // refused by the element), so every size but 360p came up empty - and 85.3.6 had removed
+  // the road down, so the frame stayed empty on that size for the whole song.
+  //
+  // THE QUESTION IS ASKED BEFORE ANYTHING IS PUT ON THE SCREEN. One two-byte range through
+  // the reader the downloader uses - the same probe `scStreamUsable` makes - answers "does
+  // this source serve this row here". The sharpest size that answers is the size that is
+  // played; a size that does not answer is never shown as a black frame, and nothing is
+  // walked to in front of the viewer: one ask, one answer, one attach.
+  function scVideoProbe(rung){
+    if(!rung || !rung.url) return Promise.resolve(false);
+    if(rung.muxed) return Promise.resolve(true);        // the progressive row is what already plays
+    var u = String(rung.url);
+    if(u.indexOf('blob:') === 0 || /^data:/i.test(u)) return Promise.resolve(true);
+    // ONLY THE NATIVE READER CAN ASK. In a browser the same request is refused for a
+    // cross-origin reason that says nothing about the stream, so it is not made there and
+    // the answer is "not known" - which behaves exactly like every release before this one.
+    if(typeof scStreamUsable !== 'function' || !scNativeHttpAvailable()) return Promise.resolve(null);
+    try{
+      return Promise.resolve(scStreamUsable(u, Number(rung.size) || 0)).then(function(good){
+        return good === false ? false : true;
+      }).catch(function(){ return null; });
+    }catch(_eProbe){ return Promise.resolve(null); }
+  }
+
+  // AND A PROBE THAT NEVER ANSWERS IS NOT A VERDICT. The asks are raced against a deadline:
+  // a reader that is slow to answer must not hold the film in the spinner, so after the
+  // deadline the sizes are "not known" - exactly the browser's answer - and the element is
+  // the judge, the way it was before this release.
+  function scVideoProbes(list){
+    var rows = list || [];
+    if(!rows.length) return Promise.resolve([]);
+    return new Promise(function(res){
+      var done = false;
+      var timer = setTimeout(function(){ if(!done){ done = true; res(null); } }, SC_VQ_PROBE_MS);
+      Promise.all(rows.map(scVideoProbe)).then(function(v){
+        if(done) return; done = true; clearTimeout(timer); res(v);
+      }).catch(function(){
+        if(done) return; done = true; clearTimeout(timer); res(null);
+      });
+    }).then(function(v){ return v || rows.map(function(){ return null; }); });
+  }
+
+  // THE SHARPEST SIZE THAT ANSWERS, AND NEVER ONE ABOVE THE ASK. The asked-for size is
+  // probed first, then the sizes under it from the top down, in one round of asks; the
+  // first that answers is the size. A refused height comes back in `refused` so the caller
+  // can mark it in the list, and when nothing answers the ask is kept and the failure road
+  // decides - guessing a smaller one here would be the walk 85.3.6 took out.
+  function scVideoPick(rungs, want){
+    var pool = scVideoLive(rungs);
+    var use = pool.length ? pool : (rungs || []);
+    var asked = scVideoRungFor(use, want);
+    if(!asked) return Promise.resolve({ rung: null, refused: [], asked: null });
+    var order = [asked].concat((use || []).filter(function(r){
+      return r && r !== asked && Number(r.h) > 0 && Number(r.h) < Number(asked.h);
+    }).sort(function(a, b){ return b.h - a.h; }).slice(0, 4));
+    return scVideoProbes(order).then(function(verdicts){
+      var refused = [];
+      for(var i = 0; i < order.length; i++){
+        if(verdicts[i] === false){ refused.push(order[i].h); continue; }
+        return { rung: order[i], refused: refused, asked: asked };
+      }
+      return { rung: asked, refused: refused, asked: asked };
+    }).catch(function(){ return { rung: asked, refused: [], asked: asked }; });
+  }
+
+  // AND THE SAME QUESTION WHEN A SIZE DIES MID-FILM. A row that answered at load can go
+  // away later (an expired address, a cap reached past the probe point), and the answer is
+  // the sharpest size under it that STILL answers - one jump, no walk - with the height
+  // that died marked in the list so the sheet stops offering it as if it played. `none` is
+  // the sentence for the case where nothing under it answers.
+  function scVideoLand(why, none){
+    var from = scVideoState.rung;
+    if(!from || !Number(from.h)) return false;
+    var tries = (scVideoState.rungs || []).filter(function(r){
+      return r && Number(r.h) > 0 && Number(r.h) < Number(from.h);
+    }).sort(function(a, b){ return b.h - a.h; }).slice(0, 5);
+    if(!tries.length) return false;
+    var token = (scVideoState.landSeq = (scVideoState.landSeq || 0) + 1);
+    scVideoProbes(tries).then(function(verdicts){
+      if(token !== scVideoState.landSeq || !scVideoState.open) return;
+      if(scVideoState.rung !== from) return;          // a hand picked another size meanwhile
+      var dead = [];
+      for(var i = 0; i < tries.length; i++){
+        if(verdicts[i] === false){ dead.push(tries[i].h); continue; }
+        for(var d = 0; d < dead.length; d++) scVideoState.deadH[dead[d]] = 1;
+        scVideoState.deadH[from.h] = 1;                // this height did not answer here
+        scVideoApplyRung(tries[i], true);
+        scVideoFoot((why || '') + ' Now at ' + tries[i].label + ', the sharpest size that opens here.');
+        return;
+      }
+      scVideoSpin(false);
+      scVideoBig(true);
+      if(none){ scVideoSay(none); scVideoFoot((why || '') + ' ' + none); }
+    }).catch(function(){});
+    return true;
   }
 
   // ── playback ---------------------------------------------------------------
@@ -22094,33 +22217,32 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // the same bytes read through the bridge above - and never by quietly landing the
     // viewer on 720p, then 480p, then the 360p row. A size picked BY HAND above the
     // floor may still step down, but only as far as the floor.
-    var fromH = from ? Number(from.h) || 0 : 0;
-    if(fromH > SC_VQ_FLOOR){
-      var pool = scVideoLive(scVideoState.rungs);
-      if(!pool.length) pool = scVideoState.rungs;
-      var under = scVideoRungBelow(pool, fromH);
-      if(under && Number(under.h) >= SC_VQ_FLOOR && scVideoState.rung && under.h !== scVideoState.rung.h){
-        scVideoApplyRung(under, true);
-        scVideoFoot('This size did not play here (' + why + ') - ' +
-          (from ? from.label + ' ' + from.codec : 'that size') + '. Now at ' + under.label + '.');
-        return;
-      }
-    }
-    // The same bytes, read instead of streamed - this keeps the size, so it is worth
-    // one try before the picture is left as it is.
-    if(scVideoState.via === 'direct'){
+    // A SIZE THIS SOURCE WILL NOT SERVE IS NOT THE END OF THE PICTURE. 85.3.6 answered a
+    // refusal at FULL HD by leaving the frame on that size and empty - which on a music
+    // upload is every size but the one-stream row, and is the owner's report word for word:
+    // any size but 360p came up with nothing in it. The refused size is marked in the list
+    // and given up in ONE move for the sharpest size under it that answers the probe.
+    if(from && from.h) scVideoState.deadH[from.h] = 1;
+    var whySize = (from ? from.label + ' ' + from.codec : 'That size') +
+      ' did not play here (' + why + ').';
+    // THE SAME BYTES, READ INSTEAD OF STREAMED - one try, and only for a size worth keeping
+    // that the reader can actually hold whole. Asking it for a film past its own ceiling is
+    // what made the tab say "the video came back empty" about a stream that was there.
+    var hold = Number(from && from.size) || 0;
+    if(scVideoState.via === 'direct' && from && Number(from.h) >= SC_VQ_FLOOR &&
+       !scVideoState.rescueH[from.h] && (!hold || hold <= scVideoReadCap())){
+      scVideoState.rescueH[from.h] = 1;
       scVideoSay('The player refused the direct stream (' + why + '). Reading it instead…');
       scVideoRead();
       return;
     }
-    // THE PICTURE IS NOT MOVED TO A SMALLER SIZE. It stays on the size that was asked
-    // for and says so, and the list is where a smaller one can be picked.
+    if(scVideoLand(whySize, 'Nothing smaller answered here either - pick a size from the list, or NEXT.')) return;
+    // NOTHING UNDER IT AT ALL: the picture stays where it is, and the line says so.
     scVideoSpin(false);
     scVideoBig(true);
     scVideoSay('This video could not be played here at ' + (from ? from.label : 'this size') +
       ' (' + why + '). NEXT tries another result.');
-    scVideoFoot((from ? from.label + ' ' + from.codec : 'That size') +
-      ' did not play here (' + why + '). The picture was not moved to a smaller size - pick one from the list, or NEXT.');
+    scVideoFoot(whySize + ' There is no smaller size for this video - NEXT tries another result.');
   }
 
   // THE READER CEILING. The bridge reads a file in one-megabyte ranges and stops at
@@ -22169,7 +22291,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // A CLOSED TAB OR A SIZE CHANGED UNDER THE READ. The bytes are for a picture that
       // is no longer the one on the screen.
       if(!scVideoState.open || scVideoState.rung !== rung) return;
-      if(!buf || !buf.byteLength){ scVideoRescueDown(rung, 'it came back empty'); return; }
+      if(!buf || !buf.byteLength){ scVideoRescueDown(rung, 'the read came back with nothing'); return; }
       var type = String(rung.mime || 'video/mp4').split(';')[0].trim() || 'video/mp4';
       try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev){}
       var blob = null;
@@ -22189,16 +22311,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!scVideoState.open) return;
     scVideoSpin(false);
     scVideoFoot((rung ? rung.label : 'That size') + ' could not be read here either (' +
-      why + '). Stepping down.');
+      why + '). Moving to a smaller size that opens.');
     if(scVideoState.rung === rung) scVideoFailed(true);
   }
 
   function scVideoRead(){
     var c = scVideoState.pick;
     if(!c || !c.url){ scVideoSay('There is nothing to read for this video.'); return; }
-    if(Number(c.size) > SC_VQ_READ_MAX){
+    // THE CEILING ASKED FOR IS THE CEILING THE READER HAS. This compared the size with 64 MB
+    // while the reader itself stops at its own 40 MB ceiling and refuses a file it could not
+    // read whole - so every film over 40 MB was read, thrown away, and reported as "the video
+    // came back empty" although the bytes were there.
+    if(Number(c.size) > scVideoReadCap()){
+      var mbBig = Math.max(1, Math.round(Number(c.size) / 1048576));
+      var bigWhy = 'This size (' + mbBig + ' MB) is too large to hold in memory here.';
+      if(scVideoLand(bigWhy, 'Pick a smaller size from the list, or NEXT for another result.')) return;
       scVideoSpin(false); scVideoBig(true);
-      scVideoSay('This size (' + Math.round(Number(c.size) / 1048576) + ' MB) is too large to read into memory. Pick a smaller size, or NEXT for another result.');
+      scVideoSay(bigWhy + ' Pick a smaller size, or NEXT for another result.');
       return;
     }
     scVideoSpin(true);
@@ -22214,7 +22343,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     Promise.resolve(job).then(function(buf){
       if(!buf || !buf.byteLength){
         scVideoSpin(false); scVideoBig(true);
-        scVideoSay('The video came back empty. NEXT tries another result.');
+        // A REFUSED READ IS NOT A PICTURE THAT IS EMPTY. The size is given up for the
+        // sharpest one under it that answers, instead of leaving a frame with no film in it.
+        if(scVideoLand('The stream could not be read here.', 'Pick a smaller size from the list, or NEXT for another result.')) return;
+        scVideoSay('The stream could not be read. NEXT tries another result.');
         return;
       }
       try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev){}
@@ -22222,8 +22354,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ scVideoState.blobUrl = URL.createObjectURL(new Blob([buf], { type: type })); }
       catch(_eBlob){ scVideoSpin(false); scVideoSay('The video could not be held in memory.'); return; }
       scVideoAttach(scVideoState.blobUrl, 'blob');
-    }).catch(function(){
-      scVideoSpin(false); scVideoBig(true);
+        }).catch(function(){
+      scVideoSpin(false);
+      scVideoBig(true);
+      if(scVideoLand('The stream could not be read here.', 'Pick a smaller size from the list, or NEXT for another result.')) return;
       scVideoSay('The video could not be read.');
     });
   }
@@ -22289,15 +22423,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoState.vidLen = Number(r.length) || 0;
       var apply = function(){
         scVideoState.rungs = r.rungs;
-        // THE DEFAULT IS THE SHARPEST SIZE THAT PLAYS HERE. A height this phone has
-        // already refused is not landed on again; it stays in the list, marked, for
-        // a hand that wants to try it.
-        var live = scVideoLive(r.rungs);
-        var rung = scVideoRungFor(live.length ? live : r.rungs, scVideoState.want);
         if(r.title) scVideoTitle(r.title, cand.owner || '');
-        scVideoApplyRung(rung, false);
-        scVideoTickStart();
-        return true;
+        // ASK BEFORE ATTACHING. Nothing is put on the screen until the size that is about
+        // to be played has answered, so a source that will not serve it is never a black
+        // frame - and the size that lands is the sharpest one that does answer, not the
+        // softest one that happens to stream.
+        return scVideoPick(r.rungs, scVideoState.want).then(function(pick){
+          if(seq !== scVideoState.loadSeq) return false;
+          (pick.refused || []).forEach(function(h){ if(h) scVideoState.deadH[h] = 1; });
+          var rung = pick.rung;
+          if(!rung) return false;
+          scVideoApplyRung(rung, false);
+          if(pick.asked && Number(rung.h) !== Number(pick.asked.h)){
+            // THE LIST AND THE FOOTER SAY WHICH SIZES THIS SOURCE WILL NOT SERVE. A picture
+            // that landed lower than the ask without a word is what made the tab look broken.
+            scVideoFoot(pick.asked.label + ' is not served here for this video' +
+              ((pick.refused || []).length ? ' (' + pick.refused.map(scVideoSizeLabel).join(', ') + ' did not answer)' : '') +
+              ' - playing ' + rung.label + ', the sharpest size that opens here.');
+          }
+          return true;
+        });
       };
       // IS THIS EVEN THIS SONG. A catalogue clip is played as handed over, which is
       // right when the catalogue is right and is someone else's video when it is
@@ -23751,7 +23896,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.6';
+  const APP_VERSION = '85.3.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24461,6 +24606,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.7', date: 'November 24, 2026', title: 'A size is checked before it is shown, and the picture is never left empty', items: [
+    '[FULL] A video size is now checked before it is shown. The picture opens on the sharpest size this source will actually serve, so a size that would come up blank is never put on the screen.',
+    '[FULL] Every size but 360p used to come up empty. When the size asked for is not served here, the picture lands on the sharpest size that does open and names the one that did not - in the footer and in the size list.',
+    '[FULL] A film larger than the in-memory reader can hold is no longer read and thrown away: that path reported it as "the video came back empty" while the picture was there all along.',
+    'The size list says which sizes this source would not serve on this phone, so a size marked did not play here is never a mystery.'
+  ] },
     { version: '85.3.6', date: 'November 23, 2026', title: 'The words follow the sound, and the picture stays at FULL HD', items: [
     'Lyrics read like a lyric sheet now: the line being sung is the bright one and the lines already sung step back, so the eye finds the words instead of hunting for a highlight.',
     'The lyric highlight follows what is actually sounding. With the music video open the song is paused underneath the picture, so the sheet used to freeze on its last line while the film sang on - it follows the picture now.',

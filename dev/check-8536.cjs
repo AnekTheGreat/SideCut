@@ -71,6 +71,10 @@ function failureRun(opts) {
     scVideoEl() { return el; },
     scVideoWatchStop() {}, scVideoSpin() {}, scVideoBig() {},
     scVideoRescue() { return false; },
+    // 85.3.7 - the refusal is handed to the probed landing; here it declines, so these
+    // assertions still describe "nothing under this size answers".
+    scVideoLand() { return false; },
+    scVideoReadCap() { return 40 * 1024 * 1024; },
     scVideoRead() { calls.read++; },
     scVideoApplyRung(r) { calls.applied.push(r.h); state.rung = r; },
     scVideoSay(t) { calls.say += String(t || ''); },
@@ -91,8 +95,10 @@ const rungs = [
   const r = failureRun({ rung: rungs[0], rungs });
   ok('a refused 1080p is not replaced by a smaller size', r.calls.applied.length === 0, JSON.stringify(r.calls.applied));
   ok('the picture is left on 1080p', r.state.rung.h === 1080);
-  ok('1080p is not remembered as dead', !r.state.deadH[1080], JSON.stringify(r.state.deadH));
-  ok('the footer says the size was not changed', /not moved to a smaller size/.test(r.calls.foot), r.calls.foot);
+  // 85.3.7 - a size that refused is marked now: the list says "did not play here" and the
+  // next attach skips it, instead of offering it again as if it worked.
+  ok('a refused 1080p is marked in the list', r.state.deadH[1080] === 1, JSON.stringify(r.state.deadH));
+  ok('the footer says there is nothing smaller to move to', /no smaller size for this video/.test(r.calls.foot), r.calls.foot);
   ok('the footer names the size that refused', /1080p H\.264/.test(r.calls.foot), r.calls.foot);
   ok('no 720/480/360 row was applied', !r.calls.applied.some((h) => h < 1080), JSON.stringify(r.calls.applied));
 }
@@ -102,11 +108,15 @@ const rungs = [
   ok('nothing smaller was applied on the read path', r.calls.applied.length === 0);
 }
 {
+  // 85.3.7 - the road no longer steps down blindly at all: it hands the refusal to the
+  // landing, which attaches the sharpest size a probe proves. Whichever size that is, the
+  // road itself attaches nothing. (dev/check-8537.cjs proves the landing's choice.)
   const rungs4k = [{ h: 2160, label: '4K', codec: 'VP9', muxed: false, url: 'u4k', size: 90e6 }].concat(rungs);
   const r = failureRun({ rung: rungs4k[0], rungs: rungs4k });
-  ok('a hand-picked 4K steps down exactly one rung, to 1080p', r.calls.applied.length === 1 && r.calls.applied[0] === 1080, JSON.stringify(r.calls.applied));
+  ok('a hand-picked 4K is left to the landing instead of a blind step', r.calls.applied.length === 0, JSON.stringify(r.calls.applied));
 }
 ok('the page carries no "default(pool)" fallback in the failure road', !/scVideoDefault\(pool\)/.test(grab('scVideoFailed')));
+ok('the failure road hands the refusal to the probed landing', /scVideoLand\(/.test(grab('scVideoFailed')));
 
 // =============================================================================
 console.log('\n2. The film keeps its sound when the app goes away');
@@ -348,10 +358,10 @@ console.log('\n7. The release itself');
   while ((m = re.exec(page))) { scripts++; try { new Function(m[1]); } catch (e) { bad++; console.log('    ' + e.message); } }
   ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
 }
-ok('the page is on 85.3.6', /const APP_VERSION = '85\.3\.6'/.test(page));
-ok('the shell cache is on 85.3.6', /sidecut-shell-v85\.3\.6/.test(sw));
-ok('the notes carry the new entry', /version: '85\.3\.6'/.test(page));
-ok('the notes entry is above 85.3.5', page.indexOf("version: '85.3.6'") < page.indexOf("version: '85.3.5'"));
+const vNow = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+ok('the page and the shell cache are on one version', !!vNow && sw.includes('sidecut-shell-v' + vNow), vNow);
+ok('the notes carry an entry for that version', page.includes("version: '" + vNow + "'"));
+ok('the 85.3.6 entry is still above 85.3.5', page.indexOf("version: '85.3.6'") < page.indexOf("version: '85.3.5'"));
 ok('the film clock is handed to the lyrics sheet', /window\.__scVideoClock = function/.test(page));
 ok('the lyrics tick asks that clock', /scLyricsClock\(\)/.test(page));
 
