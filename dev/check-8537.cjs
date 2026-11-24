@@ -333,7 +333,7 @@ const adaptiveOnly = [
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   }
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on a version at or above 85.3.7', /^85\.3\.[7-9]$/.test(vPage), vPage);
+  ok('the page is on a version at or above 85.3.7', /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 7, vPage);
   ok('the shell cache is on the same version', sw.includes("sidecut-shell-v" + vPage), vPage);
   ok('the notes carry the 85.3.7 entry', page.includes("version: '85.3.7'"));
   ok('the 85.3.7 entry is above 85.3.6', page.indexOf("version: '85.3.7'") < page.indexOf("version: '85.3.6'"));

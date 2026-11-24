@@ -24208,7 +24208,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.9';
+  const APP_VERSION = '85.3.10';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24918,6 +24918,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.10', date: 'November 24, 2026', title: 'A song the earbuds paused is a song the earbuds can start again', items: [
+      'A pause from the earbuds now leaves the session, the wake lock and the background hold alive, exactly as a pause from the lock screen already did, so the next press from the buds has something to land on.',
+      'A play press from a headset has its own branch in the app\u2019s key handler instead of falling through a catch-all, and it cancels the clock that would park the session before the song is started.',
+      'Pause from every door - the app, the lock screen, the notification, the earbuds - now goes through one function, so the two halves of a transport press cannot be wired differently again.'
+    ] },
     { version: '85.3.9', date: 'November 24, 2026', title: 'The picture is measured, and a size this phone cannot keep up with is not the one you are stuck with', items: [
       'The picture is now measured by the frames it really shows on this phone, and a size that manages only a couple of frames a second is no longer left on the screen as if it were playing.',
       'The upscaler is the first thing to come off when a picture is short of frames: it costs four draws of the whole stage for every frame, and a sharp size does not need it.',
@@ -42821,6 +42826,27 @@ function _fallbackCopy(text){
     userPaused = false;
     audioFocusInterrupted = false;
   }
+  // 85.3.10 - ONE PAUSE, WHICHEVER BUTTON ASKED FOR IT.
+  //
+  // `scTransportPaused` is what tells everything downstream "this pause came from a button
+  // the owner can press again": onPauseEvt keeps the keep-alive, the wake lock and the
+  // foreground hold when it is set (`_keepForPress`), instead of dropping all three. The
+  // media-session pause set it. The app's own key door - window.__scNativeKey, added in
+  // 83.4.0 so the earbuds always have somewhere to land - did not, so a pause from the buds
+  // with the phone in a pocket ended the session it was meant to merely pause: ten minutes
+  // later the session was parked, the hold was gone and the page was free to be frozen or
+  // reclaimed, and the press that should have undone the pause had nothing left to run it.
+  // A pause from the lock screen survived the same second press; a pause from the earbuds
+  // did not. Both doors come through here now.
+  function scTransportPause(why, fromSession){
+    // The mark FIRST: the pause event that follows reads it in the same tick.
+    try{ scTransportPaused = true; }catch(_eTpMark){}
+    const _a = activeAudio();
+    if(fromSession && _a && !_a.paused && blockSpuriousStop('media-session')) return true;
+    if(_a && !_a.paused) recordPlaybackStop(String(why || 'transport-pause'));
+    scPauseDeck();
+    return true;
+  }
   // 81.6 - A PRESS FROM THE HEADPHONES IS A REQUEST FOR THE WHOLE PLAYER BACK.
   // Clearing the mark was half of it. The pause that set the mark also stopped the
   // keep-alive and started a clock that parks (or, with nothing resumable, releases)
@@ -42924,6 +42950,15 @@ function _fallbackCopy(text){
   window.__scNativeKey = function(cmd){
     const what = String(cmd || 'toggle');
     try{
+      if(what === 'play'){
+        // 85.3.10 - SAID OUT LOUD, NOT A CATCH-ALL. A play press from the earbuds is the one
+        // press that has to undo a pause they made, so it has a branch of its own: it drops
+        // the transport-pause mark, cancels the clock that would park the session, re-arms
+        // the handlers the pause took away and starts the same song on its own second.
+        scTransportNote('the headphones -> play');
+        scTransportPlay('the headphones');
+        return true;
+      }
       if(what === 'pause'){
         // 85.3.6 - the film, when its tab is open and it is the one sounding.
         if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('pause')){
@@ -42931,7 +42966,9 @@ function _fallbackCopy(text){
           scTransportNote('the headphones -> the music video paused');
           return true;
         }
-        scPauseDeck();
+        // 85.3.10 - the same pause the lock screen makes, so the next press from the buds
+        // has a session, a wake lock and a hold still running behind it.
+        scTransportPause('the headphones');
         scTransportKeyState('paused');
         scTransportNote('the headphones -> paused');
         return true;
@@ -42960,7 +42997,7 @@ function _fallbackCopy(text){
         }
         const a = activeAudio();
         if(a && !a.paused){
-          scPauseDeck();
+          scTransportPause('the headphones');
           scTransportKeyState('paused');
           scTransportNote('the headphones -> paused');
           return true;
@@ -43038,16 +43075,13 @@ function _fallbackCopy(text){
         scTransportNote('the headphones -> the music video paused');
         return;
       }
-      const _a = activeAudio();
-      const _wasPlaying = !!_a && !_a.paused;
-      if(_wasPlaying && blockSpuriousStop('media-session')) return;
-      if(_wasPlaying) recordPlaybackStop('media-session-pause');
       // 81.6 - REMEMBER WHERE THIS PAUSE CAME FROM. A pause pressed on the headphones
       // (or the lock screen, or the widget) is a pause the owner expects to undo with
       // the same buttons, from a phone that is still in their hand - so its keep-alive
-      // survives the grace window below instead of being dropped on the spot.
-      scTransportPaused = true;
-      scPauseDeck();
+      // survives the grace window below instead of being dropped on the spot. The mark
+      // and the pause are one call now (scTransportPause), so every door that pauses
+      // leaves the session in the same state.
+      scTransportPause('media-session-pause', true);
     });
     // Below a few seconds in, "previous" means the previous song — the rule every
     // player uses. Past that it restarts the song that is playing.

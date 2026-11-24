@@ -1,5 +1,74 @@
 # SideCut — repository memory
 
+## 85.3.10 (November 24, 2026): a song the earbuds paused is a song the earbuds can start again
+
+**The owner's report**: "on my nothing ear 3, I should be able to unpause songs paused by
+the earbuds but the apps not letting me do that". The pause worked; the press that undoes it
+did nothing. That is two halves of one press, wired differently.
+
+**THE PAUSE DOOR THAT DID NOT MARK ITSELF.** `scTransportPaused` is the app's answer to "did
+this pause come from a button the owner can press again". `onPauseEvt` reads it - `const
+_keepForPress = scTransportPaused && document.hidden` - and it is the thing that decides
+whether the keep-alive, the wake lock and the foreground hold survive a pause, or are dropped
+on the spot. The media-session pause handler set it (81.6, for exactly this reason). The
+app's own key door did not: `window.__scNativeKey('pause')` (83.4.0, added so the earbuds
+always have a session to land on when the plugin is cold) called `scPauseDeck()` directly. So
+a pause from the buds with the phone in a pocket tore down the heartbeat, the wake lock and
+the hold; `armMediaRelease()` then parked the session ten minutes later, and the page was
+free to be frozen or reclaimed in the meantime. A press from the lock screen survived its
+own second press because that door had set the mark; a press from the earbuds did not.
+
+**ONE PAUSE, WHICHEVER BUTTON ASKED FOR IT.** New `scTransportPause(why, fromSession)`: it
+sets the mark FIRST (the pause event reads it in the same tick), keeps the media-session
+stale-event guard (`blockSpuriousStop`) for the session door only, records the reason into
+the stop log, and pauses the deck. The media-session `pause` handler, `__scNativeKey('pause')`
+and the pause half of `__scNativeKey('toggle')` all come through it now, so the two halves of
+a transport press cannot be wired differently again.
+
+**AND A PLAY PRESS HAS A BRANCH OF ITS OWN.** `what === 'play'` used to fall through the
+door's catch-all (`scTransportNote` + `scTransportPlay`). It is stated now: the earbuds'
+`KEYCODE_MEDIA_PLAY` reaches `scTransportPlay`, which drops the transport mark, cancels the
+clock that would park the session, re-arms the handlers a pause took away, restarts the
+heartbeat, wakes the mixer and starts the same song on its own second. Nothing about the
+player changed; the door it walks through is named.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85310.cjs` passes **32 assertions, 0 failed** - `scTransportPause`
+and `window.__scNativeKey` cut out of `index.html` by name and brace and run in a vm against
+a fake deck and recorders. The ones this release is about: a pause from the buds marks
+itself, and the mark is set **before** the deck is silenced (the fake `scPauseDeck` reads the
+flag at the moment it is called); the reason reaches the stop log; a press from the buds is
+not treated as a stale session event, while the media-session door still refuses a pause
+that is really a session hand-over - and marks itself even then. A `'play'` press is answered
+and goes through `scTransportPlay` with the note `the headphones -> play`, never through a
+toggle that could pause instead; `'pause'` goes through the shared pause and tells the native
+session it is paused, so the next press resolves as play; a toggle on a playing song pauses
+through the same door and a toggle on a paused one asks for sound; with the film open the
+film is paused first and the deck is left alone. Asserted on the page: the media-session
+handler is `scTransportPause('media-session-pause', true)`, the key door's pause and
+its toggle-pause both call `scTransportPause('the headphones')`, `onPauseEvt` still reads
+`_keepForPress = scTransportPaused && document.hidden`, `scTransportPress` still clears the
+mark, and `scTransportPlay` still asks the film before the deck. All 10 inline scripts parse,
+the page and the shell cache are 85.3.10, the notes entry is above 85.3.9 and carries no word
+the Play channel filters. The 85.3.9 (**46**), 85.3.8 (**57**), 85.3.7 (**66**) and 85.3.6
+(**74**) sets still pass, with their version assertions relaxed to "this release or newer".
+Both OTA channels rebuilt to a fixed point and verify with `--check`.
+
+Not checked: **no Nothing Ear 3 and no phone.** Nothing was pressed here. What is proven is
+that every pause door now leaves the session in the state the next press needs, and that a
+play press from a key event reaches the door that starts the song - not that a particular
+bud's AVRCP play is routed to this app's session on a particular Android build. If it still
+does nothing, the stop log (five taps on the version label) is the thing to read: it now
+names the door every pause came from, and `scTransportNote` writes `the headphones -> play`
+for every press that arrived. A page that the phone has already killed cannot answer any
+press, whatever this release does - keeping the hold alive through the pause is what stops
+that happening.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1327336 bytes**, `ota-play/updates.json` **1327351 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.9 (November 24, 2026): the picture is measured, and a size this phone cannot keep up with is not the one you are stuck with
 
 **The owner's report**: "now it runs at 2fps". One release after the size was made the size

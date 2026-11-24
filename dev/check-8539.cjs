@@ -354,7 +354,7 @@ async function fireOpen(r, times) { for (let i = 0; i < (times || 40); i++) awai
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   }
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on 85.3.9', vPage === '85.3.9', vPage);
+  ok('the page is on 85.3.9 or newer', /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 9, vPage);
   ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
   ok('the notes carry the 85.3.9 entry', page.includes("version: '85.3.9'"));
   ok('the new entry is above 85.3.8', page.indexOf("version: '85.3.9'") < page.indexOf("version: '85.3.8'"));
