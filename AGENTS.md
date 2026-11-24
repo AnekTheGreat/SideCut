@@ -1,5 +1,192 @@
 # SideCut — repository memory
 
+## 85.3.6 (November 23, 2026): the words follow the sound, and the picture stays at FULL HD
+
+**The owner's report**: the lyrics were "all out of wack" and had to be clear and on the
+recording; the music video should not "try every video quality before 360p" but open on
+1080p and go no lower; the upscaler should use AI with the Gemini key; unpause should work
+on headphones; and the film should keep its audio in the background "with the regular
+audio". Five faults, five fixes, one release.
+
+**THE LYRIC SHEET FROZE ON ITS LAST LINE WHILE THE FILM SANG.** The highlight polls
+`scListenAudio()`, which is the deck (or the stream). Opening the music video pauses the
+song underneath the picture on purpose (85.2.1), so with the film running the lyric clock
+was a paused element: the sheet stayed on whatever line it had reached, and nothing after
+it ever lit. New `scLyricsClock()` asks the film first - the module hands a
+`window.__scVideoClock` door out, because the viewer lives in its own scope - and falls
+back to the deck, then the stream. A paused player is still a stopped clock; a paused film
+too. The line-up taps use the same clock, so a line pinned while the film is up is pinned
+to the second that is being heard.
+
+**AND THE SHEET READS LIKE A LYRIC SHEET.** The current line was coral, scaled 1.02 and
+sitting on a coral pill, which made the text jump and read as a button. It is now the
+bright `--ink` line at 1.1em with no pill, the lines already sung step back to 0.32
+opacity, and the lines still coming stay readable at 0.62. `scLyricsMarkPast()` moves that
+class on the line change only, in both the timed and the plain path, so nothing is
+repainted per tick.
+
+**A REPEATED CHORUS LOST ITS SECOND TAKE.** `formatSyncedLyrics` has always expanded
+`[00:12.00][01:20.00]chorus` into two rows, but `scParseLrcLines` - the parser every
+re-timing, suspension test and line-up path reads - took only the first tag, so the sheet
+handed to those paths was missing every repeat. The LRC `[offset:+500]` tag was ignored by
+both. The parser now reads every tag on a row, applies the offset (also in the renderer)
+and returns the rows in time order.
+
+**THE LADDER IS GONE FROM THE FAILURE ROAD.** 85.3.2-85.3.5 walked a refusal one rung at a
+ time - 1080p, then 720p, 480p, the one-stream 360p row - which is exactly the "tries every
+quality before 360p" in the report. FULL HD is now a floor (`SC_VQ_FLOOR = 1080`): a
+refusal at 1080p is answered at 1080p (another codec, then the same bytes read through the
+native bridge), and if none of that works the picture STAYS at 1080p and the footer says
+so - the size list is where a smaller one can be picked by hand. A size picked by hand
+ABOVE the floor (1440p, 4K) still steps down one rung, but never past 1080p, and 1080p is
+no longer written into the dead-height memory that would put "did not play here" beside
+the size being played.
+
+**THE UPSCALER IS TUNED BY THE KEY, AND THE LIMIT IS SAID OUT LOUD.** Gemini cannot
+super-resolve video: the one video upscaler Google ships (Gemini Omni) is on the enterprise
+platform, takes 15-second clips through Cloud Storage, and is not reachable with a
+personal key from a phone, and an image model per frame at 24 fps is not something a phone
+can wait for. What the key CAN do is look: `scVideoAiTune()` sends one 512px JPEG of the
+film to the configured Gemini model and asks for three numbers - how much of the frame's
+own edges to add back when it is stretched, and gentle contrast and saturation - and that
+recipe is applied to every frame by `scVideoFxPaint` and kept per video in
+`localStorage['scVideoAiTune:<id>']`. The switch reads `HD+ AI` when it is in use. No
+pixels are invented; this is an AI-DIRECTED upscale, and the notes say so.
+
+**A HEADPHONE PRESS DID NOTHING WITH THE FILM OPEN.** The media-session play handler, the
+native key handler and `scTransportPlay` all start or toggle `activeAudio()` - the song -
+and the film's own guard (85.2.1) stops a song that starts under the picture. So play on a
+headset, on the lock screen or from the earbuds was a press the app obeyed and immediately
+undid. New `scVideoTransport(act)` is asked FIRST by all three doors: with the film tab
+open and the picture sounding it starts or pauses the picture (and its paired track), and
+with a size that has no audio it declines, because there the song really is the sound.
+
+**THE FILM KEEPS ITS SOUND WHEN THE APP GOES AWAY.** Android suspends a WebView's picture
+when the app leaves the screen, and the keep-alive, the lock-screen card and the
+notification all belong to the deck - not to a video element. On `visibilitychange`
+(`scVideoBackgroundOut`) the film's own second is handed to the regular song player at that
+second, the picture is paused and the sound lock is released, so the music keeps going in
+the background through the path that already survives it. Coming back
+(`scVideoBackgroundIn`) pauses the song, seats the picture on the second the song reached,
+takes the sound back and starts it; if the queue moved while away, the hand-back is
+declined and the tab's own follow loads the song that is on now. The tick is gated while
+the hand-off is live, so nothing re-owns the sound or reloads a film underneath the song.
+
+**What was checked**: `node dev/check-8536.cjs` passes **74 assertions, 0 failed**. Every
+function it runs is cut out of `index.html` by name and braces and run in a vm - nothing is
+a copy. The ones this release is about: a media error at 1080p applies no smaller rung, the
+picture stays on 1080p, 1080p is not marked dead, and the footer says the size was not
+changed; a refused 1080p stream is read instead of stepped down; a hand-picked 4K steps to
+exactly 1080p. Hiding the app hands the deck the film's 61.5s second, starts it, stops the
+picture and its voice, releases the sound lock, and hides the hand-off; a second hide does
+nothing; a paused film hands nothing over; coming back stops the song, seats the picture on
+the second the song reached, starts it and takes the sound back; a moved queue is left to
+the follow. A press on a paused film starts the picture and holds the song, pause and
+toggle behave, and a no-audio size or a backgrounded film declines the press. The lyric
+clock reads the film's second when it is sounding, the deck's when it is not, and is null
+when the deck is paused; the past-line marks move on a line change and clear on a jump back.
+`[00:12.00][01:20.00]chorus` returns two rows at 12s and 80s in time order, `[offset:+500]`
+and `[offset:-250]` move every line, a metadata row is not a lyric, and the renderer
+applies the offset too. The AI recipe is clamped to 0.15-0.9 / 0.95-1.4 / 0.9-1.3, a
+recipe with no edge is refused, junk in the store is not a recipe, and the ask carries the
+inline JPEG and the configured model. Both OTA channels rebuilt to a fixed point
+(`pass 3: 1317854 -> 1317854`) and verify with `--check` at 85.3.6.
+
+**What was not checked**: no phone and no browser session. Nothing here was heard or
+watched: the highlight was proven as a clock source and a class change, not as words on a
+screen following a song; the AI tune was proven as a request and a clamped recipe, not as a
+sharper frame, and whether a particular key answers that prompt with usable numbers is
+untested; whether the film's hand-off to the deck is audible on a device - and how closely
+the deck's second matches the picture's - is unmeasured; and no headset was pressed. The
+Gemini limitation above is a statement about the API, not a guess about this build. A
+video-only 1080p row that this phone genuinely cannot open now leaves the picture where it
+is with a line saying so, by design; the size list is the way down.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1317854 bytes**, `ota-play/updates.json` **1317869 bytes**. Page-only: no native change,
+so the APK is not rebuilt.
+
+## 85.3.5 (November 23, 2026): the music comes back after another app, and a game on the microphone is not a call
+
+**The owner's report**: "fix the stupid audio in other apps and with oneplus game assistant,
+make it smooth and working". Three faults, one block, and one of them had been broken since
+the duck first shipped.
+
+**THE DUCK WAS SCHEDULED INTO THE YEAR 56,000.** `scDuckSetLevel` timed its ramp with
+`Date.now() / 1000` - about 1.79 billion seconds - while every other gain move in the page
+is timed on `audioCtx.currentTime`, a small number of seconds since the context was born.
+`setValueAtTime(from, now)` put the starting value there and `linearRampToValueAtTime(level,
+now + 0.4)` put the duck there too, so the music never stepped back when an assistant or
+another app asked for the audio and never came back up either. Nothing read the failure
+because the call returns normally. It is now scheduled on the audio clock (`scAudioClock()`),
+a suspended context is woken first, and a non-ramped step uses `setValueAtTime` instead of
+writing `.value` under a pending automation.
+
+**A GAME HOLDING THE MICROPHONE WAS READ AS A PHONE CALL.** `SideCutAudioFocus.inCall()`
+returned true for `MODE_IN_COMMUNICATION`, and that mode is set by anything that holds the
+microphone - a VoIP call, but also every game with voice chat, Discord, and the OnePlus/Oppo
+game assistant. While it was up every undo path in the page refused (`scInCall()` gates
+`scUndoPlatformPause`, the heartbeat, `recoverAudio` and the background stall), so one
+notification blip during a game parked the song for the whole session. `inCall()` now
+answers only for what a call sets (`MODE_IN_CALL`, `MODE_RINGTONE`, `MODE_CALL_SCREENING`,
+plus the telephony state when `READ_PHONE_STATE` happens to be granted) and `commMode()`
+reports the microphone separately, so the music is no longer held down FOR it but the page
+still knows somebody is talking.
+
+**AND NOTHING BROUGHT THE SONG BACK AFTER ANOTHER APP.** A permanent focus `loss` pauses and
+latches `audioFocusInterrupted`, and the latch was cleared only by a focus GAIN, a call
+ending, or a start of the user's own. Android does not send GAIN to a client that does not
+hold focus, and this app deliberately does not ask for it (58.8.4), so once another app had
+taken the speakers the song stayed parked until the owner pressed play. New
+`scStartHandBackWatch()` asks the phone every 4 s (`SC_HAND_BACK_MS`, override for the gate
+at `window.__scHandBackMs`) whether the speakers are free - no call, nobody on the
+microphone, nothing else on the music stream - and needs two quiet answers in a row before
+`scResumeAfterInterruption()` drops the latch and starts the same element on the second it
+was parked. A fade (`scPickupRamp`, 0.45 s on the master gain) makes the return a fade
+rather than a jump. It stops itself on a deliberate pause, a call, an empty queue, DJ Mode,
+the film that owns the sound, or after 45 looks; a native half that never answers counts as
+"unknown" for four looks and then as free, so a silent plugin cannot leave the song dead.
+Coming back into the app asks the same question once (`visibilitychange`), so the trip
+through a game or another app also ends with the song restored.
+
+**THE NATIVE HALF** (`.github/workflows/patch-audiofocus.py`): `inCall()` loses
+`MODE_IN_COMMUNICATION`; new `commMode()`, `musicActive()` (the only `isMusicActive()` use
+whose answer is about somebody ELSE, because it is only asked while this app is paused) and
+`facts()`; `callState()` and the new `focusState()` both return it; the `focusChange` payload
+carries `comm` and `musicActive` too. The page prefers `focusState()` and falls back to
+`callState()` on an older APK, reading a missing `musicActive` as "not known" rather than
+"nothing is playing".
+
+**What was checked**: `node dev/check-8535.cjs` passes **34 assertions, 0 failed** - it
+lifts the shipped audio-focus block out of `index.html` and runs it in a vm against a fake
+plugin, a fake `<audio>` element and a fake master gain. The ones this release is about: a
+duck at 12.5 s into the context ramps to 0.2 at 12.9 s and nothing is scheduled past 1e6;
+the step back up uses the same clock; a focus loss pauses the song and starts the watch; the
+song stays parked while `musicActive` is true, returns to the same second with no press when
+the phone goes quiet, and the master gain is taken to 0 and ramped to 1; a game holding the
+microphone (`comm`, no `inCall`) does not count as a call, holds the song while it lasts and
+releases it; a real call still stands the song down, starts no watch and gives the song back
+on `gain`; a deliberate pause ends the watch; an APK without `focusState()` is still asked
+through `callState()` and still gets the song back (`knowsMusic` false); returning to the app
+puts a parked song back on its second. All 7 inline scripts of the page parse; the native
+patcher ran in a scratch tree, registered the plugin in `MainActivity` exactly once, is
+idempotent on a second run, and the Java it emits balances its braces (50/50) with
+`focusState`, `commMode`, `musicActive` and no `MODE_IN_COMMUNICATION` in the call test. Both
+OTA channels rebuilt to a fixed point and verify with `--check`.
+
+**What was not checked**: no phone, no emulator and no real focus events. What is proven is
+which clock the ramp is scheduled on and what the page does with each answer the plugin can
+give - not that a duck is audible on a device, nor which exact fact an OnePlus game
+assistant publishes while a game runs. If a game keeps `MODE_IN_COMMUNICATION` up, the song
+is held down while the game is in front (by design: somebody has the microphone) and comes
+back when it lets go; the stop log (`5 taps on the version label`) records every wait and
+every return, which is the thing to read if a particular game still misbehaves. The native
+change needs the NEXT APK: the page half of the hand-back works on today's build, but the
+call/comm split only exists once that APK ships.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1311128 bytes**, `ota-play/updates.json` **1311139 bytes**.
+
 ## 85.3.4 (November 19, 2026 · 6:20 PM EST): one song, one film, the music pauses on the way out, and the equalizer reaches the film
 
 **The film kept changing song.** The tab follows the queue by comparing the playing

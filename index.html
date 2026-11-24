@@ -6678,12 +6678,21 @@ html, body{ max-width:100%; overflow-x:hidden; }
     padding: 4px 0;
   }
   #lyricsText .lyric-line {
-    padding: 6px 10px;
+    padding: 8px 12px;
     margin: 2px 0;
     border-radius: 8px;
-    transition: color 0.25s ease, transform 0.25s ease, background 0.25s ease, filter 0.3s ease;
+    /* 85.3.6 - CLEAR, like the sheet a streaming app draws: the line that is sung is
+       the brightest thing on the screen, the lines already sung step back, and the
+       ones still coming stay readable. The coral pill and the scale-up are gone - they
+       made the text jump and read as a button rather than as the song. */
+    transition: color 0.22s ease, opacity 0.28s ease, font-size 0.22s ease, filter 0.3s ease;
     color: var(--ink-dim);
+    opacity: .62;
+    line-height: 1.5;
     cursor: pointer;
+  }
+  #lyricsText .lyric-line.past {
+    opacity: .32;
   }
   #lyricsText .lyric-line:active {
     transform: scale(0.98);
@@ -6699,10 +6708,12 @@ html, body{ max-width:100%; overflow-x:hidden; }
     background: rgba(255,255,255,0.05);
   }
   #lyricsText .lyric-line.current {
-    color: var(--coral);
-    font-weight: 600;
-    background: color-mix(in srgb, var(--coral) 16%, transparent);
-    transform: scale(1.02);
+    color: var(--ink);
+    font-weight: 700;
+    background: none;
+    opacity: 1;
+    font-size: 1.1em;
+    letter-spacing: -0.005em;
   }
   #lyricsText .lyric-line .lyric-word {
     display: inline;
@@ -14661,15 +14672,29 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var m = String(text == null ? '' : text).match(scLrcTagRe());
     return !!(m && m.length >= 2);
   }
+  // EVERY STAMP ON THE LINE, AND THE SHEET'S OWN OFFSET. A repeated chorus is written
+  // once with two stamps in front of it ("[00:12.00][01:20.00]chorus") and the parser
+  // read only the first, so the second take had no line at all; "[offset:+250]" is part
+  // of LRC and was ignored outright. Both are read here, and the rows come back in time
+  // order whatever order the sheet was written in.
   function scParseLrcLines(lrc){
-    var out = [];
-    var rows = String(lrc || '').split('\n');
+    var out = [], off = 0, block = String(lrc || '');
+    var om = block.match(/\[offset:\s*([+-]?\d+)\s*\]/i);
+    if(om) off = (parseInt(om[1], 10) || 0) / 1000;
+    var rows = block.split('\n');
     for(var i = 0; i < rows.length; i++){
-      var m = rows[i].match(/^\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\](.*)$/);
-      if(!m) continue;
-      var sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + (m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0);
-      out.push({ t: sec, text: m[4] });
+      var row = rows[i];
+      if(!row || row.indexOf('[') === -1) continue;
+      var times = [], m, tag = scLrcTagRe();
+      while((m = tag.exec(row)) !== null){
+        var sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + (m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0);
+        times.push(sec);
+      }
+      if(!times.length) continue;
+      var text = row.replace(scLrcTagRe(), ' ').trim();
+      for(var k = 0; k < times.length; k++) out.push({ t: Math.max(0, times[k] + off), text: text });
     }
+    out.sort(function(a, b){ return a.t - b.t; });
     return out;
   }
   function scFormatLrcRows(rows){
@@ -15173,8 +15198,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if (!$('lyricsText')._seekWired) {
       $('lyricsText')._seekWired = true;
       $('lyricsText').addEventListener('click', function(ev) {
-        var audio = activeAudio();
-        if (!audio) return;
+        // 85.3.6 - the same clock the highlight uses, so a line pinned while the music
+        // video is up is pinned to the second that is being heard.
+        var _clk = scLyricsClock();
+        var audio = _clk ? _clk.audio : activeAudio();
+        if (!_clk && !audio) return;
+        var _nowAt = _clk ? _clk.time : (audio ? (Number(audio.currentTime) || 0) : 0);
         // Try word first (more precise), then line
         // 73.1.3 - in align mode a tap on a line PINS it, it does not seek.
         if (lyricsLineUpOn) {
@@ -15188,10 +15217,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           if (!scParseLrcLines(base).length) { toast('Line up needs timed lines to work from.', 3000); return; }
           scLyricAlign.base = base;
           scLyricAlign.anchors = scLyricAlign.anchors.filter(function(a){ return a.i !== idx; });
-          scLyricAlign.anchors.push({ i: idx, t: audio.currentTime });
+          scLyricAlign.anchors.push({ i: idx, t: _nowAt });
           scLyricAlignSave();
           scLyricAlignApply();
-          toast('Line ' + (idx + 1) + ' pinned at ' + scFmtClock(audio.currentTime) + ' — ' + scLyricAlign.anchors.length + ' pinned. Tap another line, or tap Line up again.', 4000);
+          toast('Line ' + (idx + 1) + ' pinned at ' + scFmtClock(_nowAt) + ' — ' + scLyricAlign.anchors.length + ' pinned. Tap another line, or tap Line up again.', 4000);
           return;
         }
 
@@ -15441,6 +15470,37 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if (aiBtn) { aiBtn.addEventListener("click", function() { aiSyncLyrics(); }); }
   }, 200);
 
+  // THE LYRIC CLOCK IS WHATEVER IS ACTUALLY SOUNDING. A deck song is the usual one. With
+  // the music-video tab open the film owns the sound and the song is deliberately paused
+  // underneath it, so the sheet used to freeze on its last line while the picture sang
+  // on - the words have to follow the picture's second, not a stopped deck. A paused
+  // song is still a stopped clock (the highlight stops with the audio), and the film
+  // being paused is the same answer.
+  function scLyricsClock(){
+    try{
+      var vc = (typeof window.__scVideoClock === 'function') ? window.__scVideoClock() : null;
+      if(vc) return { audio: null, time: Number(vc.time) || 0, dur: Number(vc.dur) || 0, video: true };
+    }catch(_eClockV){}
+    var a = null;
+    try{ a = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio(); }catch(_eClockA){ a = null; }
+    if(!a || a.paused) return null;
+    var d = 0;
+    try{ if(isFinite(a.duration) && a.duration > 0) d = Number(a.duration); }catch(_eClockD){}
+    return { audio: a, time: Number(a.currentTime) || 0, dur: d, video: false };
+  }
+
+  // CLEAR: the line being sung is the one the eye lands on, and the lines already sung
+  // step back. Only the past dims - the line that is coming stays readable.
+  function scLyricsMarkPast(lines, idx){
+    if(!lines) return;
+    for(var i = 0; i < lines.length; i++){
+      var el = lines[i];
+      if(!el || !el.classList) continue;
+      var on = i < idx;
+      if(el.classList.contains('past') !== on) el.classList.toggle('past', on);
+    }
+  }
+
 function startLyricsAutoScroll(keepPos, noReset) {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
@@ -15483,20 +15543,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // the highlight stayed dead until the lyrics were closed and reopened.
       if (document.hidden) return;
       
-      const audio = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio();
-      if (!audio) return;
-      // Paused means the clock has stopped, so the highlight and the
-      // auto-scroll stop with it and pick up exactly where they left off,
-      // instead of running on ahead of what you are actually hearing. A tap
-      // on a line while paused still moves it: that path sets the line itself.
-      if (audio.paused) return;
+      // 85.3.6 - the clock is whatever is sounding: the deck, the stream, or the music
+      // video's own picture when its tab is open. A paused player is a stopped clock,
+      // so the highlight stops with the audio and picks up where it left off.
+      const clock = scLyricsClock();
+      if (!clock) return;
+      const audio = clock.audio;
       
       // Small lead so the highlight fires before the timestamp, not after.
       // Compensates for the polling interval + render latency (~60 ms).
       const LYRICS_LEAD_MS = 0.06;
       // + the per-song nudge: shifts every comparison so a highlight that is
       // a couple of lines out lands back on the beat (both line + word modes).
-      const currentTime = audio.currentTime + LYRICS_LEAD_MS + lyricsSyncOffsetSec;
+      const currentTime = clock.time + LYRICS_LEAD_MS + lyricsSyncOffsetSec;
       const lyricsText = $('lyricsText');
       if (!lyricsText) return;
       
@@ -15531,6 +15590,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
               l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
             });
             currentLine.classList.add('current');
+            scLyricsMarkPast(allLines, currentIdx);
             scLettersWipeOthers(currentLine);
             lastLyricsIdx = currentIdx;
             scrollLyricsToLine(container, currentLine);
@@ -15577,9 +15637,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // the whole plain-lyrics block was skipped and NOTHING was lit or moved, on
         // every song. The stored length is the same number the rest of the app uses.
         var _sheetDur = 0;
-        if (audio.duration > 0) {
-          if(isFinite(audio.duration)) _sheetDur = audio.duration;
-        }
+        if (clock.dur > 0) _sheetDur = clock.dur;
         // 80.7.1 - a streamed song knows its own length, which is what a plain
         // sheet is paced against before the element has published one.
         if(!_sheetDur){
@@ -15595,7 +15653,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
             var _qt = _qid != null ? allTracks.find(function(tr){ return tr.id === _qid; }) : null;
             var _qd = _qt ? Number(_qt.duration) : 0;
             if(_qd > 0 && isFinite(_qd)) _sheetDur = _qd;
-            else if(audio.currentTime > 0) _sheetDur = Math.max(audio.currentTime * 1.05, 0);
+            else if(clock.time > 0) _sheetDur = Math.max(clock.time * 1.05, 0);
           }catch(_eSheetDur){}
         }
         if (_sheetDur > 0) {
@@ -15619,6 +15677,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
               l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
             });
             allLines[targetIdx].classList.add('current');
+            scLyricsMarkPast(allLines, targetIdx);
             scLettersWipeOthers(allLines[targetIdx]);
             scrollLyricsToLine(container, allLines[targetIdx]);
           } else if(!_tapHeld2 && allLines[targetIdx].classList.contains('current')) {
@@ -15628,7 +15687,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // across this line's proportional window — the same weight-based,
           // gap-capped pacing as synced lyrics, so the feature works on EVERY
           // song instead of only the ones that carry timestamps.
-          if (lyricsWordByWord && audio.duration > 0 && allLines[targetIdx] && !allLines[targetIdx].dataset.inst) {
+          if (lyricsWordByWord && clock.dur > 0 && allLines[targetIdx] && !allLines[targetIdx].dataset.inst) {
             const lineFrom = starts[targetIdx];
             const lineTo = (targetIdx + 1 < starts.length) ? starts[targetIdx + 1] : _sheetDur;
             scPaceWords(allLines[targetIdx], lineFrom, lineTo, currentTime);
@@ -19919,7 +19978,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
     pendingKey: '', lastLoad: 0, voice: null,
-    fxOn: false, fxRaf: 0
+    fxOn: false, fxRaf: 0,
+    // 85.3.6 - the hand-off while the app is away, and the AI-tuned upscale.
+    bg: null, aiTimer: null, aiAsked: '', aiEdge: 0, aiContrast: 0, aiSaturate: 0
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -19934,6 +19995,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
   var SC_VFX_AMOUNT = 0.6;                 // how much of the frame's own edges comes back
   var SC_VFX_BLUR = 'blur(1px)';           // the copy the edges are taken from
+  var SC_VQ_FLOOR = 1080;                  // the picture is never walked under FULL HD
+  var SC_VFX_AI_KEY = 'scVideoAiTune';     // one AI-read recipe per video, kept on the device
   // THE SIZES A VIDEO CAN HAVE. Whatever height a row reports is read as the nearest
   // one of these, so the list is the ladder a viewer knows instead of a number the
   // encode happened to land on.
@@ -20836,6 +20899,78 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.songWasPlaying = false;
   }
 
+  // ── the film keeps its sound when the app goes away --------------------------
+  // A DECK SONG is what this app keeps playing in the background: the keep-alive, the
+  // lock-screen card and the notification all belong to it. A video element does not
+  // get any of that - Android suspends a WebView's picture the moment the app leaves
+  // the screen. So when the app goes away the film's own second is handed to the
+  // ordinary song player, which keeps singing under the lock screen and answers the
+  // headphones there; coming back hands the picture its second again and the film
+  // resumes where the song has reached. That is what was asked for: the music video
+  // keeps its audio in the background, with the regular audio.
+  function scVideoBackgroundOut(){
+    if(!scVideoState.open || scVideoState.bg) return;
+    var v = scVideoEl('scVideoEl');
+    if(!v || !v.src) return;
+    // WAS IT PLAYING? The platform can stop the picture before this runs, and the answer
+    // then is a paused element - but the film was running a half second ago and its
+    // sound must not die with the screen. The tick keeps the last real state.
+    var playing = !v.paused || Number(scVideoState.filmPlaying) === 1;
+    scVideoState.filmPlaying = 0;
+    if(!playing) return;                          // nothing was playing: nothing to hand over
+    if(!scVideoState.owns) return;                // the song IS the sound already
+    var at = Number(v.currentTime) || 0;
+    scVideoState.bg = { at: at, key: String(scVideoState.songKey || '') };
+    // The song takes the sound at the frame's second BEFORE the picture stops, so the
+    // hand-off is a cut rather than a silence.
+    var a = scVideoAudioEl();
+    try{
+      if(a){
+        try{ a.currentTime = at; }catch(_eBgSeek){}
+        try{ a.muted = false; }catch(_eBgMute){}
+        var p = a.play();
+        if(p && p.catch) p.catch(function(){});
+      }
+    }catch(_eBgPlay){}
+    try{ v.pause(); }catch(_eBgPause){}
+    scVideoAuxPause();
+    scVideoOwnSound(false);                       // the song may sound now
+    scVideoState.songWasPlaying = true;
+    scVideoState.blocked = false;
+  }
+  function scVideoBackgroundIn(){
+    var bg = scVideoState.bg;
+    if(!bg) return;
+    scVideoState.bg = null;
+    var a = scVideoAudioEl();
+    var at = 0;
+    try{ at = a ? (Number(a.currentTime) || 0) : 0; }catch(_eBgIn){ at = 0; }
+    if(!(at > 0)) at = Number(bg.at) || 0;
+    if(a){ try{ a.pause(); }catch(_eBgInPause){} }
+    var v = scVideoEl('scVideoEl');
+    if(!v || !v.src) return;
+    // THE QUEUE MAY HAVE MOVED while the song played on. If it did, the tab's own
+    // follow loads the song that is on now - this hand-back would be for the old one.
+    var t = scVideoTrack();
+    var keyNow = String((t && t.key) || '');
+    if(keyNow && bg.key && keyNow !== bg.key) return;
+    scVideoOwnSound(scVideoState.audioMode !== 'song');
+    scVideoState.blocked = false;
+    try{ v.currentTime = at; }catch(_eBgInSeek){}
+    if(scVideoState.audioMode === 'aux') scVideoAuxSet(at);
+    if(scVideoState.audioMode === 'song'){ try{ if(a) a.currentTime = at; }catch(_eBgInSong){} }
+    scVideoPlayAttempt();
+    scVideoIdleWake();
+  }
+  try{
+    document.addEventListener('visibilitychange', function(){
+      try{
+        if(document.hidden) scVideoBackgroundOut();
+        else scVideoBackgroundIn();
+      }catch(_eVideoVis){}
+    });
+  }catch(_eVideoVisHook){}
+
   // THE APP'S OWN RESOLVER, NOT A SECOND COPY OF IT. scYtPlayer carries the client
   // list that still answers and the cipher handling the converter was measured with,
   // and it hands back the picture rows of the same answer (`videos`). That is what
@@ -21096,17 +21231,31 @@ function startLyricsAutoScroll(keepPos, noReset) {
         try{ bx.filter = 'none'; bx.globalCompositeOperation = 'source-over'; bx.globalAlpha = 1; }catch(_eFxBufReset){}
       }
     }
+    // THE RECIPE CAN BE THIS FILM'S OWN. With a Gemini key set, one frame is read once
+    // (scVideoAiTune) and the edge amount plus the two gentle corrections come from what
+    // that frame actually looks like, instead of one number for every music video.
+    var aiEdge = Number(scVideoState.aiEdge) || 0;
+    var aiContrast = Number(scVideoState.aiContrast) || 0;
+    var aiSaturate = Number(scVideoState.aiSaturate) || 0;
+    var edgeAmt = aiEdge > 0 ? Math.max(0.15, Math.min(0.9, aiEdge)) : SC_VFX_AMOUNT;
+    var tuned = (aiContrast > 0 || aiSaturate > 0);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
-    try{ ctx.filter = 'none'; }catch(_eFxF){}
+    try{
+      ctx.filter = tuned
+        ? 'contrast(' + (aiContrast > 0 ? Math.max(0.95, Math.min(1.4, aiContrast)) : 1) +
+          ') saturate(' + (aiSaturate > 0 ? Math.max(0.9, Math.min(1.3, aiSaturate)) : 1) + ')'
+        : 'none';
+    }catch(_eFxF){}
     try{ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }catch(_eFxSm){}
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+    try{ ctx.filter = 'none'; }catch(_eFxClean){}
     if(buf){
       try{
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = SC_VFX_AMOUNT;
+        ctx.globalAlpha = edgeAmt;
         ctx.drawImage(buf.cv, 0, 0);
       }catch(_eFxPass){
       }finally{
@@ -21172,10 +21321,136 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.fxOn = !scVideoState.fxOn;
     scVideoFxPref(scVideoState.fxOn);
     scVideoFxApply();
+    if(scVideoState.fxOn) scVideoAiSchedule();
+    var tuned = Number(scVideoState.aiEdge) > 0;
     scVideoFoot(scVideoState.fxOn
-      ? 'Upscaling on - each frame is resampled to this screen and sharpened.'
+      ? ('Upscaling on - each frame is resampled to this screen and sharpened' +
+         (tuned ? ', with the amounts AI read off this film' : '') + '.')
       : 'Upscaling off - the picture is shown the way it arrives.');
     scVideoIdleWake();
+  }
+
+  // ── the upscaler, tuned by a model that can see the film ---------------------
+  // WHAT THE GEMINI API CAN AND CANNOT DO. It cannot super-resolve video. The one video
+  // upscaler Google ships (Gemini Omni) lives on the enterprise platform, takes
+  // 15-second clips out of Cloud Storage, and is not reachable with a personal key from
+  // a phone; running an image model on every frame of a 24 fps film is not possible
+  // either - a phone would spend a minute of network time to produce one second of
+  // picture, and the whole tab would play at a quarter of its size.
+  //
+  // So the model does the part it is actually good at. It LOOKS at one frame of this
+  // film and says how much of the frame's own edges should be added back when the
+  // picture is stretched to the screen, and how much contrast and saturation the encode
+  // lost. That recipe is read once per video and kept on the device, and every frame
+  // then uses it - so a soft dark concert clip and a bright animation are not sharpened
+  // with the same number, and the key the owner pasted is what decides. The pixels still
+  // come from the recording: this is an AI-DIRECTED upscale, not a generative one, and
+  // the mini bar says HD+ AI when it is on rather than pretending otherwise.
+  function scVideoAiNum(v, lo, hi){ var n = Number(v); if(!isFinite(n)) return 0; return Math.max(lo, Math.min(hi, n)); }
+  function scVideoAiRecipe(v){
+    if(!v || typeof v !== 'object') return null;
+    var edge = scVideoAiNum(v.edge, 0.15, 0.9);
+    if(!(edge > 0)) return null;
+    return { edge: edge,
+             contrast: scVideoAiNum(v.contrast, 0.95, 1.4) || 1,
+             saturate: scVideoAiNum(v.saturate, 0.9, 1.3) || 1 };
+  }
+  function scVideoAiRead(id){
+    if(!id) return null;
+    try{
+      var raw = localStorage.getItem(SC_VFX_AI_KEY + ':' + id);
+      if(!raw) return null;
+      return scVideoAiRecipe(JSON.parse(raw));
+    }catch(_eAiRead){ return null; }
+  }
+  function scVideoAiStore(id, rec){
+    if(!id || !rec) return;
+    try{ localStorage.setItem(SC_VFX_AI_KEY + ':' + id, JSON.stringify(rec)); }catch(_eAiStore){}
+  }
+  function scVideoAiApply(rec){
+    if(!rec) return;
+    scVideoState.aiEdge = rec.edge;
+    scVideoState.aiContrast = rec.contrast;
+    scVideoState.aiSaturate = rec.saturate;
+    // The switch says which upscale is on, so a sharper frame is not a mystery.
+    try{ var b = scVideoEl('scVideoBoost'); if(b) b.textContent = 'HD+ AI'; }catch(_eAiBtn){}
+  }
+  // One small JPEG of this frame. Small on purpose: the answer is three numbers, and a
+  // 512px still is enough to tell a soft, blocky encode from a sharp one.
+  function scVideoAiStill(){
+    var v = scVideoEl('scVideoEl');
+    var vw = v ? Number(v.videoWidth) || 0 : 0, vh = v ? Number(v.videoHeight) || 0 : 0;
+    if(!vw || !vh) return '';
+    var w = 512, h = Math.max(2, Math.round(vh * (w / vw)));
+    try{
+      var cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      var cx = cv.getContext ? cv.getContext('2d') : null;
+      if(!cx) return '';
+      cx.drawImage(v, 0, 0, w, h);
+      return String(cv.toDataURL('image/jpeg', 0.7) || '');
+    }catch(_eAiStill){ return ''; }
+  }
+  function scVideoAiTune(){
+    if(!scVideoState.open || !scVideoState.fxOn) return;
+    var id = String(scVideoState.videoId || '');
+    if(!id) return;
+    var cached = scVideoAiRead(id);
+    if(cached){ scVideoAiApply(cached); return; }
+    if(scVideoState.aiAsked === id) return;
+    var key = '';
+    try{ key = (typeof _aiGeminiKey !== 'undefined') ? String(_aiGeminiKey || '') : ''; }catch(_eAiKey){ key = ''; }
+    if(!key) return;
+    var still = scVideoAiStill();
+    if(!still) return;
+    var b64 = still.split(',')[1] || '';
+    if(!b64) return;
+    scVideoState.aiAsked = id;
+    var prompt = 'You are tuning the upscaler for a music video being played on a phone. ' +
+      'You are shown ONE frame of it, reduced in size. The app will stretch the frame to the ' +
+      'screen, take its own edges out with a small blur, and add those edges back over the ' +
+      'picture. Choose how much to add back, and any gentle correction the encode needs. ' +
+      'Answer with JSON only and no prose: ' +
+      '{"edge": <number 0.15 to 0.9>, "contrast": <number 0.95 to 1.4>, "saturate": <number 0.9 to 1.3>}. ' +
+      'edge: higher when the frame is soft, blocky or heavily compressed; lower when it is ' +
+      'already sharp or so noisy that edges would sparkle. contrast and saturate: 1 means leave it alone.';
+    var body = {
+      contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 120 }
+    };
+    try{
+      fetch('https://generativelanguage.googleapis.com/v1beta/models/' + window.__scGeminiModel() +
+        ':generateContent?key=' + key, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      }).then(function(r){ return (r && r.ok) ? r.json() : null; }).then(function(d){
+        var txt = '';
+        try{
+          var parts = d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts;
+          txt = (parts && parts[0]) ? String(parts[0].text || '') : '';
+        }catch(_eAiTxt){ txt = ''; }
+        if(!txt) return;
+        var m = txt.match(/\{[\s\S]*\}/);
+        if(!m) return;
+        var rec = null;
+        try{ rec = scVideoAiRecipe(JSON.parse(m[0])); }catch(_eAiParse){ rec = null; }
+        if(!rec) return;
+        if(String(scVideoState.videoId || '') !== id) return;      // the film moved on
+        scVideoAiStore(id, rec);
+        scVideoAiApply(rec);
+        scVideoFxApply();
+      }).catch(function(){});
+    }catch(_eAiAsk){}
+  }
+  // ONE ASK PER FILM, AND NOT BEFORE THERE IS A FRAME. The recipe is read off the picture
+  // itself, so it waits until the picture has been drawn at least once; a source that
+  // never produces a frame simply never asks and the plain HD+ number stays.
+  function scVideoAiSchedule(){
+    if(scVideoState.aiTimer){ clearTimeout(scVideoState.aiTimer); scVideoState.aiTimer = null; }
+    if(!scVideoState.open) return;
+    scVideoState.aiTimer = setTimeout(function(){
+      scVideoState.aiTimer = null;
+      try{ scVideoAiTune(); }catch(_eAiSched){}
+    }, 1400);
   }
 
   // ── the quality list -------------------------------------------------------
@@ -21282,6 +21557,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.wasPlaying = hadSrc ? !v.paused : true;
     scVideoState.rung = rung;
     scVideoState.pick = { url: rung.url, mime: rung.mime, size: rung.size };
+    scVideoAiSchedule();
     scVideoState.alts = (rung.alts || []).slice();
     scVideoState.alt = 0;
     // THE PAIRED VOICE IS PREFERRED, even on a one-stream row: the same recording,
@@ -21589,6 +21865,49 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }
 
+  // A PRESS FROM THE HEADPHONES BELONGS TO WHAT IS SOUNDING. With the film open its
+  // picture - or its paired track - IS the audio, and the deck song is deliberately
+  // paused underneath it. The deck's transport was therefore asking a paused song to
+  // start, and the guard that keeps the song out from under the film stopped it again
+  // one tick later: a button that did nothing at all. This answers the press with the
+  // film, and it is the first door every outside press goes through.
+  function scVideoTransport(act){
+    if(!scVideoState.open || scVideoState.bg) return false;
+    var v = scVideoEl('scVideoEl');
+    if(!v || !v.src) return false;
+    if(scVideoState.audioMode === 'song') return false;   // the song is the sound: the deck answers
+    var what = String(act || 'toggle');
+    var playing = !v.paused;
+    if(what === 'play' && playing) return true;
+    if(what === 'pause' && !playing) return true;
+    if(what === 'pause' || (what === 'toggle' && playing)){
+      try{ v.pause(); }catch(_eVTp1){}
+      scVideoAuxPause();
+      scVideoBig(true);
+      scVideoBarState();
+      return true;
+    }
+    scVideoState.blocked = false;
+    scVideoHoldSong();
+    scVideoPlayAttempt();
+    scVideoBig(false);
+    scVideoIdleWake();
+    return true;
+  }
+  // THIS MODULE OWNS THE FILM'S SCOPE, the transport and the lyrics sheet do not. Two
+  // doors are handed out instead of reaching across: the press above, and the clock the
+  // words follow while the picture is what is sounding.
+  try{
+    window.__scVideoTransportPress = scVideoTransport;
+    window.__scVideoClock = function(){
+      if(!scVideoState.open || !scVideoState.owns || scVideoState.bg) return null;
+      var v = scVideoEl('scVideoEl');
+      if(!v || !v.src || v.paused) return null;
+      return { time: Number(v.currentTime) || 0,
+               dur: (isFinite(v.duration) && v.duration > 0) ? Number(v.duration) : 0 };
+    };
+  }catch(_eVideoDoors){}
+
   // ── the tab follows the song ------------------------------------------------
   // The picture belongs to the song that is playing, not to the song the tab was
   // opened for. When the queue moves on, the film moves with it and opens on the
@@ -21624,9 +21943,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   function scVideoSync(force){
+    // WHILE THE SOUND IS THE SONG'S, THE PICTURE IS ASLEEP. The tab handed its audio to
+    // the regular player because the app is in the background; nothing here may pause
+    // that song, take the sound back, or load a new film underneath it.
+    if(scVideoState.bg){ scVideoClock(); return; }
     scVideoFollow();
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src) return;
+    scVideoState.filmPlaying = v.paused ? 0 : 1;
     if(scVideoState.scrubbing){ scVideoClock(); return; }
     // THE PICTURE IS THE CLOCK when a paired track carries the sound. The
     // soundtrack is nudged onto the picture, never the other way round: a seek
@@ -21753,7 +22077,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // tried, so it is remembered by height: the list marks it, and the automatic
     // landing stops choosing it for the rest of the session. A list that forgets is
     // how the same dead size is offered again on the next song.
-    if(from && from.h && (code === 3 || code === 4 || dead === true)) scVideoState.deadH[from.h] = 1;
+    // NOWHERE AT OR UNDER THE FLOOR IS REMEMBERED AS DEAD. FULL HD is where the picture
+    // starts every time, so marking it would only put "did not play here" beside the
+    // size that is being played.
+    if(from && from.h && Number(from.h) > SC_VQ_FLOOR && (code === 3 || code === 4 || dead === true)) scVideoState.deadH[from.h] = 1;
     // Then the honest fallback: the best size that carries its own sound. The
     // size the owner chose is kept for the next video - it is this phone that
     // could not open it, not a choice that was wrong.
@@ -21762,41 +22089,38 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // with its own sound threw the 720p picture away because 1080p was refused.
     // One step, then the honest fallback, so a broken phone is not walked down
     // the whole ladder nine seconds at a time.
-    var pool = scVideoLive(scVideoState.rungs);
-    if(!pool.length) pool = scVideoState.rungs;
-    // ONE STEP AT A TIME, ALL THE WAY DOWN. The first refusal took the rung under the
-    // one that failed and the second jumped to the one-stream row, so a phone that
-    // refused 1080p and 720p was never offered the 480p picture it could open. Every
-    // refusal now steps to the rung directly under the one that failed, and only the
-    // bottom of the ladder is the one-stream fallback.
-    var def = null;
-    if(Number(scVideoState.drops) < 4){
-      def = scVideoRungBelow(pool, scVideoState.rung ? scVideoState.rung.h : 0);
-      if(def) scVideoState.drops = Number(scVideoState.drops) + 1;
+    // AND NOBODY IS WALKED DOWN THE LADDER. FULL HD is the size this tab opens on and
+    // the size it stays on: a refusal is answered AT that size - another codec, then
+    // the same bytes read through the bridge above - and never by quietly landing the
+    // viewer on 720p, then 480p, then the 360p row. A size picked BY HAND above the
+    // floor may still step down, but only as far as the floor.
+    var fromH = from ? Number(from.h) || 0 : 0;
+    if(fromH > SC_VQ_FLOOR){
+      var pool = scVideoLive(scVideoState.rungs);
+      if(!pool.length) pool = scVideoState.rungs;
+      var under = scVideoRungBelow(pool, fromH);
+      if(under && Number(under.h) >= SC_VQ_FLOOR && scVideoState.rung && under.h !== scVideoState.rung.h){
+        scVideoApplyRung(under, true);
+        scVideoFoot('This size did not play here (' + why + ') - ' +
+          (from ? from.label + ' ' + from.codec : 'that size') + '. Now at ' + under.label + '.');
+        return;
+      }
     }
-    if(!def) def = scVideoDefault(pool);
-    if(def && scVideoState.rung && def.h !== scVideoState.rung.h){
-      scVideoApplyRung(def, true);
-      // On the footer, not the transient line: a playing picture clears that one
-      // the moment it starts, and this fallback is the thing worth knowing.
-        // A one-stream row after a paired one is the end of the road, and it is worth
-      // saying so: on a phone that refuses the sharp rows, this is the picture it
-      // will actually play, and that is not the same news as a single stumble.
-      scVideoFoot('This size did not play here (' + why + ') - ' +
-        (from ? from.label + ' ' + from.codec : 'that size') +
-        '. Now at ' + def.label + '.' +
-        ((def.muxed && from && !from.muxed) ? ' That is the sharpest size this phone will play here.' : ''));
-      return;
-    }
+    // The same bytes, read instead of streamed - this keeps the size, so it is worth
+    // one try before the picture is left as it is.
     if(scVideoState.via === 'direct'){
       scVideoSay('The player refused the direct stream (' + why + '). Reading it instead…');
       scVideoRead();
       return;
     }
+    // THE PICTURE IS NOT MOVED TO A SMALLER SIZE. It stays on the size that was asked
+    // for and says so, and the list is where a smaller one can be picked.
     scVideoSpin(false);
     scVideoBig(true);
-    scVideoSay('This video could not be played here (' + why + '). NEXT tries another result.');
-    scVideoFoot('Close this tab to go back to the song.');
+    scVideoSay('This video could not be played here at ' + (from ? from.label : 'this size') +
+      ' (' + why + '). NEXT tries another result.');
+    scVideoFoot((from ? from.label + ' ' + from.codec : 'That size') +
+      ' did not play here (' + why + '). The picture was not moved to a smaller size - pick one from the list, or NEXT.');
   }
 
   // THE READER CEILING. The bridge reads a file in one-megabyte ranges and stops at
@@ -21940,6 +22264,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.deadH = {};
     scVideoState.rescueH = {};
     scVideoState.want = scVideoWant();
+    scVideoState.aiAsked = '';
+    scVideoState.aiEdge = 0;
+    scVideoState.aiContrast = 0;
+    scVideoState.aiSaturate = 0;
     return scVideoPlayer(cand.videoId).then(function(r){
       // ONLY THE LOAD THAT IS STILL CURRENT MAY UNLOCK THE TAB. A stale answer used
       // to clear the flag while the film that is on was still being looked for.
@@ -22165,6 +22493,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.startAt = null;
     scVideoState.songKey = '';
     scVideoState.openedAt = 0;
+    // NOTHING IS HANDED OVER AND NOTHING IS TUNED once the tab is gone.
+    scVideoState.bg = null;
+    scVideoState.aiAsked = '';
+    scVideoState.aiEdge = 0;
+    scVideoState.aiContrast = 0;
+    scVideoState.aiSaturate = 0;
+    if(scVideoState.aiTimer){ clearTimeout(scVideoState.aiTimer); scVideoState.aiTimer = null; }
+    try{ var _bh = scVideoEl('scVideoBoost'); if(_bh) _bh.textContent = 'HD+'; }catch(_eCloseBoost){}
     scVideoCoverHide();
     scVideoBig(false);
     scVideoSpin(false);
@@ -22324,6 +22660,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // turns music-only / instrumental markers (no words, "Music", "♪", "(music)")
     // into a music-icon line that stays highlighted across the instrumental gap.
     const TAG = scLrcTagRe();
+    // [offset:+250] is the sheet's own correction in milliseconds. It was ignored, so a
+    // sheet mastered half a second out stayed half a second out however good the
+    // highlight was.
+    let lrcOff = 0;
+    try{
+      const om = String(lrc || '').match(/\[offset:\s*([+-]?\d+)\s*\]/i);
+      if(om) lrcOff = (parseInt(om[1], 10) || 0) / 1000;
+    }catch(_eLrcOff){ lrcOff = 0; }
     const nodes = [];
     const srcLines = String(lrc || '').split('\n');
     for(let li = 0; li < srcLines.length; li++){
@@ -22346,7 +22690,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // For sung lines drop stray ♪ decorations from the visible text.
       if(!isInst) text = deGlyph.trim();
       for(let ti2 = 0; ti2 < times.length; ti2++){
-        const t = Math.max(0, times[ti2]);
+        const t = Math.max(0, times[ti2] + lrcOff);
         if(isInst){
           nodes.push({
             t: t, kind: 'inst', html: '<div class="lyric-line lyric-inst" data-time="' + t + '" data-inst="1" aria-label="Instrumental">' +
@@ -23407,7 +23751,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.4';
+  const APP_VERSION = '85.3.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24117,6 +24461,21 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.6', date: 'November 23, 2026', title: 'The words follow the sound, and the picture stays at FULL HD', items: [
+    'Lyrics read like a lyric sheet now: the line being sung is the bright one and the lines already sung step back, so the eye finds the words instead of hunting for a highlight.',
+    'The lyric highlight follows what is actually sounding. With the music video open the song is paused underneath the picture, so the sheet used to freeze on its last line while the film sang on - it follows the picture now.',
+    'A lyric sheet that writes a repeated chorus once with two timestamps keeps both takes, and a sheet with its own offset tag has that offset applied instead of ignored.',
+    '[FULL] The music video opens on FULL HD and never walks down the sizes. If this phone refuses 1080p the picture stays at 1080p and says so, and the size list is where a smaller one can be picked.',
+    '[FULL] With a Gemini key set, HD+ is tuned to each film: one frame is read and the amount of edge and correction comes from it, and the switch reads HD+ AI.',
+    '[FULL] The headphones and the lock screen play and pause the music video when its tab is open, instead of pressing a song that is paused underneath it.',
+    '[FULL] The music video keeps its audio in the background: leaving the app hands its second to the ordinary player, and coming back gives the picture that second again.'
+  ] },
+      { version: '85.3.5', date: 'November 23, 2026', title: 'The music comes back after another app, and a game is not a call', items: [
+    'The music comes back by itself after another app used the speakers: a song parked by an interruption returns on its own second, faded in, as soon as the phone is quiet again instead of waiting for a press of play.',
+    'A game or a voice app is no longer read as a phone call. The audio mode every game with voice chat and the OnePlus game assistant holds was taken as a call in progress, so one blip during a game left the song paused for the whole session.',
+    'The assistant duck actually ducks now. Its ramp was scheduled on the wall clock instead of the audio clock - about 1.79 billion seconds ahead - so the music never stepped back for an assistant or an app that took the audio, and never came back up either.',
+    'Coming back into the app asks the phone once whether the speakers are free, so a song parked while you were in another app or a game resumes when you return.'
+  ] },
       { version: '85.3.4', date: 'November 19, 2026', title: 'One song, one film, and the same equalizer on the film', items: [
     '[FULL] The music video stays on the song that is playing: a change has to hold for two ticks before another film is loaded, so it no longer takes turns between three songs.',
     '[FULL] Leaving a music video pauses the music on the second the picture stopped, instead of starting the song again by itself.',
@@ -42029,6 +42388,13 @@ function _fallbackCopy(text){
     const who = why || 'the headphones';
     try{ scTransportPress(); }catch(_ePress){}
     try{ scAudioCtxAwake(); }catch(_eAwake){}
+    // 85.3.6 - WITH THE FILM OPEN THE PRESS IS THE FILM'S. Its picture is the sound and
+    // the deck song is paused on purpose underneath it, so starting the deck here was a
+    // play the film's own guard immediately stopped - a dead button on every headset.
+    if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('play')){
+      scTransportNote(who + ' -> the music video');
+      return true;
+    }
     const a = activeAudio();
     if(!a){ scTransportSay(who + ' asked for music and there is no player'); return true; }
     if(!a.src){
@@ -42082,6 +42448,12 @@ function _fallbackCopy(text){
     const what = String(cmd || 'toggle');
     try{
       if(what === 'pause'){
+        // 85.3.6 - the film, when its tab is open and it is the one sounding.
+        if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('pause')){
+          scTransportKeyState('paused');
+          scTransportNote('the headphones -> the music video paused');
+          return true;
+        }
         scPauseDeck();
         scTransportKeyState('paused');
         scTransportNote('the headphones -> paused');
@@ -42104,6 +42476,11 @@ function _fallbackCopy(text){
         return true;
       }
       if(what === 'toggle'){
+        // 85.3.6 - with the film open, pause and unpause belong to the film.
+        if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('toggle')){
+          scTransportNote('the headphones -> the music video');
+          return true;
+        }
         const a = activeAudio();
         if(a && !a.paused){
           scPauseDeck();
@@ -42149,6 +42526,13 @@ function _fallbackCopy(text){
     // buttons back on a song nobody is hearing.
     if(scStreamPhoneOwns()){ try{ scStreamPhoneArm(); }catch(_eRms){ } return; }
     mediaSetActionHandler('play', () => {
+      // 85.3.6 - the lock screen and the headphones play the FILM when its tab is open:
+      // the deck song is paused underneath it by design, so asking the deck was a play
+      // that never made a sound.
+      if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('play')){
+        scTransportNote('the headphones -> the music video');
+        return;
+      }
       // 83.3.0 - one door: wake the mixer, start the song, say what happened.
       if(scTransportPlay('the headphones or the lock screen')) return;
       try{ scTransportPress(); }catch(e){}
@@ -42172,6 +42556,11 @@ function _fallbackCopy(text){
       });
     });
     mediaSetActionHandler('pause', () => {
+      // 85.3.6 - and it pauses the film, not a deck that is already paused.
+      if(typeof window.__scVideoTransportPress === 'function' && window.__scVideoTransportPress('pause')){
+        scTransportNote('the headphones -> the music video paused');
+        return;
+      }
       const _a = activeAudio();
       const _wasPlaying = !!_a && !_a.paused;
       if(_wasPlaying && blockSpuriousStop('media-session')) return;
@@ -42927,6 +43316,7 @@ function _fallbackCopy(text){
     // never registers for - the same promise the gain path makes.
     if(audioFocusCallPause){
       audioFocusCallPause = false;
+      try{ scHandBackStop('the call ended'); }catch(_eCallStop){}
       if(userPaused) return;
       audioFocusInterrupted = false;
       // 81.3 - and the song comes back to whichever element the call stopped.
@@ -42951,19 +43341,204 @@ function _fallbackCopy(text){
   function scInCall(){
     return scCallKnown && (Date.now() - scCallKnownAt) < SC_CALL_TTL_MS;
   }
-  function scAskCallState(){
+  // ─── 85.3.5 - ANOTHER APP IS NOT A PHONE CALL, AND THE SONG COMES BACK ───────
+  // Two reports, one mechanism: the music died when other apps were used, and it
+  // died with the OnePlus game assistant open.
+  //
+  // A CALL IS NOT "SOMETHING HOLDS THE MICROPHONE". The call question was answered
+  // from the audio mode alone, and MODE_IN_COMMUNICATION is the mode of anything
+  // that holds the microphone - a VoIP call, but also every game with voice chat,
+  // Discord, and the game assistant on an OnePlus or Oppo phone. While that mode
+  // was up every undo path in this app refused ("a call is in progress"), so a
+  // single blip from another app during a game left the song paused for the rest of
+  // the session. A call is now what only a call sets (MODE_IN_CALL, MODE_RINGTONE,
+  // MODE_CALL_SCREENING, or the telephony state when it is readable), and the
+  // communication mode is reported beside it as `comm`.
+  //
+  // AND NOTHING BROUGHT THE SONG BACK. A permanent focus loss is obeyed - it pauses
+  // and latches - and the latch was cleared only by a focus GAIN, a call ending, or
+  // a start of the user's own. Android does not send GAIN to a client that does not
+  // hold focus, and this app deliberately does not ask for it (58.8.4: asking makes
+  // Chromium pause its own element), so once another app had used the speakers the
+  // song stayed parked until the owner pressed play. The watch below asks the
+  // phone, every few seconds, whether the speakers are free again - no call, nobody
+  // on the microphone, nothing else making sound - and puts the song back on the
+  // second it was parked, faded in.
+  const SC_FACTS_TTL_MS = 8000;      // an answer from the phone is good for this long
+  const SC_HAND_BACK_MS = (typeof window !== 'undefined' && window.__scHandBackMs) || 4000;
+  const SC_HAND_BACK_TRIES = 45;     // about three minutes, then the phone is believed
+  const SC_HAND_BACK_FREE = 2;       // two quiet answers in a row, not one
+  const SC_PICKUP_RAMP_S = 0.45;     // the fade back in, so a resume is not a jump
+  let scPhoneFacts = { at: 0, has: false, mode: -1, inCall: false, ringing: false,
+                       comm: false, musicActive: false, knowsMusic: false };
+  // What the phone last said, kept in one place. `knowsMusic` is false on a build
+  // whose native half is older than this release: that half cannot say whether
+  // something else is making sound, and an answer it never gave is not read as one.
+  function scNotePhoneFacts(f){
+    if(!f || typeof f !== 'object') return null;
+    const ringing = !!f.ringing;
+    const knowsMusic = (typeof f.musicActive === 'boolean');
+    scPhoneFacts = {
+      at: Date.now(), has: true,
+      mode: (typeof f.mode === 'number') ? f.mode : -1,
+      inCall: !!(f.inCall || ringing), ringing: ringing,
+      comm: (typeof f.comm === 'boolean') ? !!f.comm : false,
+      musicActive: knowsMusic ? !!f.musicActive : false,
+      knowsMusic: knowsMusic
+    };
+    return scPhoneFacts;
+  }
+  function scPhoneFactsFresh(){
+    return !!scPhoneFacts.has && (Date.now() - scPhoneFacts.at) < SC_FACTS_TTL_MS;
+  }
+  // The phone, asked once. `focusState` is the 85.3.5 answer and carries the whole
+  // picture; `callState` is all an older APK has, and it still answers the one
+  // question that must never be missed (is a call up). Neither method means no
+  // evidence, and no evidence never holds the music down.
+  function scAskPhoneFacts(done){
+    let got = null;
+    const finish = function(){
+      if(typeof done === 'function'){ try{ done(got); }catch(e){} }
+    };
     try{
       const P = capAudioFocus;
-      if(!P || typeof P.callState !== 'function'){ scNoteCallState(false); return; }
-      const p = P.callState({});
-      if(p && typeof p.then === 'function'){
-        p.then(function(r){ scNoteCallState(!!(r && (r.inCall || r.ringing))); },
-               function(){ scNoteCallState(false); });
-      } else {
-        scNoteCallState(false);
+      let p = null;
+      if(P && typeof P.focusState === 'function'){ p = P.focusState({}); }
+      else if(P && typeof P.callState === 'function'){ p = P.callState({}); }
+      else {
+        const C = window.Capacitor;
+        if(C && typeof C.nativePromise === 'function'){
+          try{ p = C.nativePromise('SideCutAudioFocus', 'focusState', {}); }catch(_eNr){ p = null; }
+        }
       }
-    }catch(e){ scNoteCallState(false); }
+      if(p && typeof p.then === 'function'){
+        p.then(function(r){ got = scNotePhoneFacts(r); finish(); },
+               function(){ finish(); });
+        return;
+      }
+      if(p && typeof p === 'object'){ got = scNotePhoneFacts(p); finish(); return; }
+      finish();
+    }catch(e){ finish(); }
   }
+  // ─── The hand-back ──────────────────────────────────────────────────────────
+  let scHandBackTimer = null, scHandBackTicks = 0, scHandBackQuiet = 0;
+  // Would a song come back if the speakers were free? A deliberate pause, a call
+  // this app stood down for, DJ Mode, the film that owns the sound, and a queue
+  // with nothing on it all say no. Nothing here starts a song for the app's own
+  // pleasure.
+  function scHandBackNeeded(){
+    try{
+      if(userPaused) return false;
+      if(audioFocusCallPause) return false;
+      if(!audioFocusInterrupted) return false;
+      if(window.__scVideoSoundOwn) return false;
+      if($('djModeBackdrop').style.display === 'flex') return false;
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const s = scStreamState.audio;
+        return !!(s && s.paused && !scStreamState.userPaused && !s.ended);
+      }
+      const a = activeAudio();
+      if(!a || !a.paused || a.ended) return false;
+      return queueIndex >= 0 && queueIndex < queue.length;
+    }catch(e){ return false; }
+  }
+  function scHandBackWatchOn(){ return !!scHandBackTimer; }
+  function scHandBackStop(why){
+    if(scHandBackTimer){ clearInterval(scHandBackTimer); scHandBackTimer = null; }
+    scHandBackTicks = 0; scHandBackQuiet = 0;
+  }
+  function scStartHandBackWatch(why){
+    if(scHandBackTimer) return false;
+    if(!scHandBackNeeded()) return false;
+    scHandBackTicks = 0; scHandBackQuiet = 0;
+    recordPlaybackStop('waiting for the speakers (' + why + ')');
+    scHandBackTimer = setInterval(function(){
+      try{
+        if(scHandBackTicks++ >= SC_HAND_BACK_TRIES){ scHandBackStop('gave up'); return; }
+        if(!scHandBackNeeded()){ scHandBackStop('not needed'); return; }
+        scAskPhoneFacts(function(f){
+          try{
+            if(!scHandBackNeeded()){ scHandBackStop('not needed'); return; }
+            // No answer is not a free speaker - for the first few looks. A native
+            // half that never answers must not leave the song silent forever.
+            const unknown = !f;
+            if(unknown && scHandBackTicks < 4){ scHandBackQuiet = 0; return; }
+            // Still talking: a call, a game or a voice app on the microphone, or
+            // anything else still making sound. The speakers are not ours.
+            const busy = !unknown && (f.inCall || f.comm || (f.musicActive && f.knowsMusic));
+            if(busy){ scHandBackQuiet = 0; return; }
+            if(++scHandBackQuiet < SC_HAND_BACK_FREE) return;
+            scHandBackStop('the phone is quiet');
+            scResumeAfterInterruption(why);
+          }catch(e){}
+        });
+      }catch(e){ scHandBackStop('failed'); }
+    }, SC_HAND_BACK_MS);
+    return true;
+  }
+  // The fade back in. The master gain is already on every path, and the duck owns
+  // it, so a resume rides the same node - from silence up over half a beat, and
+  // never while something else is holding it down.
+  function scPickupRamp(){
+    if(!scDuckMaster || scDuckHeld()) return false;
+    try{
+      const g = scDuckMaster.gain;
+      const now = scAudioClock();
+      if(g.cancelScheduledValues) g.cancelScheduledValues(now);
+      if(g.setValueAtTime) g.setValueAtTime(0, now);
+      if(g.linearRampToValueAtTime) g.linearRampToValueAtTime(1, now + SC_PICKUP_RAMP_S);
+      else g.value = 1;
+      return true;
+    }catch(e){ return false; }
+  }
+  // THE SONG COMES BACK. The latch is dropped FIRST, so every path that refuses
+  // while the app is standing down is already on the side of the song by the time
+  // `play()` lands - and `revivingAudio` keeps the start from being read as a press
+  // of the owner's own.
+  function scResumeAfterInterruption(why){
+    try{
+      if(userPaused) return false;
+      if(!scHandBackNeeded()) return false;
+      const stream = (typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns());
+      const s = stream ? scStreamState.audio : null;
+      const a = stream ? null : activeAudio();
+      if(stream && (!s || !s.paused || s.ended || scStreamState.userPaused)) return false;
+      if(!stream && (!a || !a.paused || a.ended)) return false;
+      audioFocusInterrupted = false;
+      audioFocusInterruptedAt = 0;
+      audioFocusCallPause = false;
+      revivingAudio = true;
+      try{
+        const p = stream ? s.play() : a.play();
+        if(p && typeof p.catch === 'function') p.catch(function(){});
+      }catch(e){}
+      scPickupRamp();
+      recordPlaybackStop((stream ? 'the stream' : 'the song') + ' comes back after ' + why);
+      setTimeout(function(){ revivingAudio = false; }, 1600);
+      return true;
+    }catch(e){ return false; }
+  }
+  function scAskCallState(){
+    scAskPhoneFacts(function(f){ scNoteCallState(!!(f && f.inCall)); });
+  }
+  // Coming back into the app is the moment the phone is asked once, whatever the
+  // app missed while it was frozen: an answer that says the speakers are free puts
+  // the song back, and one that says a call or another app still has them starts
+  // the same watch instead of leaving the song parked forever.
+  try{
+    document.addEventListener('visibilitychange', function(){
+      if(document.hidden) return;
+      if(!scHandBackNeeded()) return;
+      scAskPhoneFacts(function(f){
+        try{
+          if(!scHandBackNeeded()) return;
+          const busy = f && (f.inCall || f.comm || (f.musicActive && f.knowsMusic));
+          if(busy){ scStartHandBackWatch('back in the app'); return; }
+          scResumeAfterInterruption('back in the app');
+        }catch(e){}
+      });
+    });
+  }catch(_eVisFacts){}
   // The phone says a call is up (or ringing): the speakers belong to it. This pause
   // is not the user asking and it is not an app playing a blip - it is a call - so
   // the song is remembered as interrupted and comes back once the call ends. Nothing
@@ -42973,6 +43548,7 @@ function _fallbackCopy(text){
       audioFocusInterrupted = true;
       audioFocusInterruptedAt = Date.now();
       audioFocusCallPause = true;
+      try{ scHandBackStop('a call is in progress'); }catch(_eCallWatch){}
       // 80.0.1 - a call is not an assistant borrowing the audio for a moment, so a
       // duck that is being held when a call starts is dropped here. Without this the
       // call would pause the song and the resume at the end of it would come back up
@@ -43138,15 +43714,31 @@ function _fallbackCopy(text){
   // still works on a build whose AudioContext never came up. The element volume is
   // only moved when there is NO graph - with a graph it belongs to the crossfade,
   // which is the whole reason the duck has a node of its own.
+  // 85.3.5 - A RAMP IS TIMED ON THE AUDIO CLOCK, NOT THE WALL CLOCK. Every gain
+  // move this app makes is scheduled on `audioCtx.currentTime` - a small number of
+  // seconds since the context was born - except this one, which was handed
+  // `Date.now() / 1000`: about 1.79 billion seconds, some fifty-six years past the
+  // last sample the phone will ever play. `setValueAtTime` put the starting value
+  // there and the ramp put the duck level there too, so the music never stepped
+  // back when an assistant or another app asked for it, and never came back up
+  // either. The call returns normally, which is why nothing ever read the failure.
+  function scAudioClock(){
+    try{ if(audioCtx && typeof audioCtx.currentTime === 'number') return audioCtx.currentTime; }catch(e){}
+    return 0;
+  }
   function scDuckSetLevel(level, ramp){
-    const now = Date.now();
+    const now = scAudioClock();
     if(scDuckMaster){
       try{
+        // A suspended context has a frozen clock; a duck scheduled on it would not
+        // be heard at all, so it is woken first.
+        if(audioCtx && audioCtx.state === 'suspended'){ try{ audioCtx.resume().catch(function(){}); }catch(_eRes){ } }
         const g = scDuckMaster.gain;
         const from = (typeof g.value === 'number') ? g.value : 1;
-        if(g.cancelScheduledValues) g.cancelScheduledValues(now / 1000);
-        if(g.setValueAtTime) g.setValueAtTime(from, now / 1000);
-        if(ramp && g.linearRampToValueAtTime) g.linearRampToValueAtTime(level, now / 1000 + SC_DUCK_RAMP_S);
+        if(g.cancelScheduledValues) g.cancelScheduledValues(now);
+        if(g.setValueAtTime) g.setValueAtTime(from, now);
+        if(ramp && g.linearRampToValueAtTime) g.linearRampToValueAtTime(level, now + SC_DUCK_RAMP_S);
+        else if(g.setValueAtTime) g.setValueAtTime(level, now);
         else g.value = level;
         return true;
       }catch(e){ return false; }
@@ -43237,6 +43829,7 @@ function _fallbackCopy(text){
   Object.defineProperty(window, '__scDuckMaster', { get: function(){ return scDuckMaster; } });
   function releaseAudioFocus(){
     audioFocusInterrupted = false;
+    try{ scHandBackStop('a deliberate pause'); }catch(_eRelStop){}
     if(!audioFocusHeld) return;
     audioFocusHeld = false;
     audioFocusCall('abandon');
@@ -43247,7 +43840,12 @@ function _fallbackCopy(text){
         const ev = String((d && d.event) || '');
         // A 73.6 plugin asks the phone before it reports, so the answer can ride on
         // the event itself. Trust it when it is there, ask when it is not.
-        if(d && (typeof d.inCall === 'boolean' || typeof d.ringing === 'boolean')){
+        if(d && (typeof d.inCall === 'boolean' || typeof d.ringing === 'boolean' || typeof d.comm === 'boolean')){
+          // 85.3.5 - the event carries the phone's whole answer now, so the page
+          // does not have to spend a round trip to learn that a game (or a game
+          // assistant) is holding the microphone, or that something else is still
+          // making sound.
+          try{ scNotePhoneFacts(d); }catch(_eFactsEv){}
           scNoteCallState(!!(d.inCall || d.ringing));
         }
         if(ev === 'loss' || ev === 'lossTransient'){
@@ -43310,6 +43908,12 @@ function _fallbackCopy(text){
           if(ev === 'loss') audioFocusHeld = false;
           const a = activeAudio();
           if(a && !a.paused){ try{ a.pause(); }catch(e){} }
+          // 85.3.5 - AND SOMETHING WATCHES FOR THE HAND-BACK. The system will not
+          // send GAIN to a client that does not hold focus, so without this the
+          // latch stays set until the owner presses play. It stops itself on a
+          // deliberate pause, a call, an empty queue or a song that came back.
+          try{ scStartHandBackWatch('another app took the audio'); }catch(_eHandBack){}
+          try{ scNotePhoneFacts(d); }catch(_eHandBackFacts){}
         } else if(ev === 'gain' || ev === 'gainTransient' || ev === 'gainTransientMayDuck'){
           audioFocusHeld = true;
           // 80.0.1 - the system saying the audio is ours again is the one honest
@@ -43333,6 +43937,7 @@ function _fallbackCopy(text){
             }
           }
           audioFocusInterrupted = false;
+          try{ scHandBackStop('the phone handed the audio back'); }catch(_eHandStop){}
         } else if(ev === 'duck'){
           // 80.0.1 - A DUCK IS THE SIGNAL THIS RELEASE IS ABOUT. Another app asking
           // the system to duck us - an assistant listening, a navigation prompt, a
@@ -43347,6 +43952,19 @@ function _fallbackCopy(text){
       });
     }catch(e){}
   }
+
+  // 85.3.5 - published for the harness that drives this release: is the app waiting
+  // for the speakers, what does it think the phone said, and does it put the song
+  // back without a press?
+  window.__scHandBack = {
+    watching: function(){ return scHandBackWatchOn(); },
+    facts: function(){ return JSON.parse(JSON.stringify(scPhoneFacts)); },
+    fresh: function(){ return scPhoneFactsFresh(); },
+    needed: function(){ return scHandBackNeeded(); },
+    resume: function(why){ return scResumeAfterInterruption(why || 'the harness asked'); },
+    start: function(why){ return scStartHandBackWatch(why || 'the harness asked'); },
+    stop: function(){ scHandBackStop('the harness asked'); }
+  };
 
   // Records why playback stopped — or why it refused to. Kept on the device so a
   // stop that cannot be reproduced here (a phone, a car kit, a call) can be read
@@ -43501,6 +44119,7 @@ function _fallbackCopy(text){
       audioFocusInterrupted = false;
       audioFocusInterruptedAt = 0;
       audioFocusCallPause = false;
+      try{ scHandBackStop('playing'); }catch(_ePlayStop){}
     }
     scStartCallWatch();
     audioFocusPlayAt = Date.now();

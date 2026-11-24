@@ -38,6 +38,19 @@ when to bring it back up, so the plugin remembers the last focus event and grows
 mode. It says "over" only on positive evidence, so a duck Android applied without
 telling anyone leaves the web layer's own bounded wait in charge.
 
+85.3.5 - MODE_IN_COMMUNICATION IS NOT A PHONE CALL. The audio mode was read as one,
+so anything holding the microphone - a VoIP call, but also every game with voice
+chat, Discord and the OnePlus/Oppo game assistant - made the web layer believe a
+call was up. Every undo path in the page refuses while a call is up, so a single
+blip from another app during a game left the music paused for the rest of the
+session. `inCall()` now answers only for what a call sets (MODE_IN_CALL,
+MODE_RINGTONE, MODE_CALL_SCREENING, plus the telephony state when that permission is
+granted), and `commMode()` reports the microphone separately. The plugin also grows
+`focusState()`, which reports whether anything else is playing on the music stream
+(`isMusicActive()`) beside those facts: that is how the page knows the speakers are
+free again and brings the song back by itself, since Android never sends a focus
+GAIN to a client that does not hold focus.
+
 80.2.9 - MODE_IN_CALL_SCREENING DOES NOT EXIST. The call check compared the audio
 mode against `AudioManager.MODE_IN_CALL_SCREENING`, which is not a constant in the
 SDK at any API level: `MODE_CALL_SCREENING` (API 29) is the only call-screening mode
@@ -140,6 +153,10 @@ public class SideCutAudioFocusPlugin extends Plugin {
                             data.put("mode", m);
                             data.put("ringing", m == AudioManager.MODE_RINGTONE);
                             data.put("inCall", inCall());
+                            // 85.3.5 - a game or an assistant on the microphone is
+                            // not a call, and the page is told which one it is.
+                            data.put("comm", commMode());
+                            data.put("musicActive", musicActive());
                         } catch (Exception ignored) {
                             // Still report the focus change itself.
                         }
@@ -176,17 +193,23 @@ public class SideCutAudioFocusPlugin extends Plugin {
      * a focus interruption is obeyed, because another app playing a message blip
      * looks exactly like a call from inside the WebView otherwise.
      *
-     * MODE_IN_CALL / MODE_IN_COMMUNICATION (a cellular or VoIP call), MODE_RINGTONE
-     * (an incoming call) and MODE_CALL_SCREENING (a call being screened, API 29) are
-     * the audio modes a call is in, and the mode is readable by any app. The sharper
-     * answer would be TelephonyManager's call state, but that needs READ_PHONE_STATE,
-     * which this app does not ask for, so it is only consulted when that permission
-     * happens to be granted already.
+     * MODE_IN_CALL (a cellular call), MODE_RINGTONE (an incoming call) and
+     * MODE_CALL_SCREENING (a call being screened, API 29) are the audio modes a call
+     * is in, and the mode is readable by any app. The sharper answer would be
+     * TelephonyManager's call state, but that needs READ_PHONE_STATE, which this app
+     * does not ask for, so it is only consulted when that permission happens to be
+     * granted already.
+     *
+     * 85.3.5 - MODE_IN_COMMUNICATION IS NOT IN THIS LIST. It is the mode of anything
+     * that holds the microphone, and a game with voice chat (or the game assistant
+     * that sits over it) holds it for as long as the game runs. Counting it as a call
+     * made every undo path in the page refuse for that whole session, which is the
+     * music dying with a game open. It is reported by commMode() instead.
      */
     private boolean inCall() {
         try {
             int m = mode();
-            if (m == AudioManager.MODE_IN_CALL || m == AudioManager.MODE_IN_COMMUNICATION) return true;
+            if (m == AudioManager.MODE_IN_CALL) return true;
             if (m == AudioManager.MODE_RINGTONE) return true;
             // MODE_CALL_SCREENING is the Q constant (API 29). There is no
             // MODE_IN_CALL_SCREENING in AudioManager at all, and naming it here stopped
@@ -211,24 +234,81 @@ public class SideCutAudioFocusPlugin extends Plugin {
     }
 
     /**
-     * 73.6 - the web layer asks this before it obeys any interruption, so that a
-     * messaging app's own sound cannot stop the music the way a phone call does.
-     * Answers are plain facts: inCall is true while a call is up or ringing.
+     * 85.3.5 - is something holding the microphone? MODE_IN_COMMUNICATION is set by a
+     * VoIP call and by any game or assistant with voice chat. While it is up the music
+     * is held down (it is not paused FOR it), because somebody is talking. It is
+     * reported apart from inCall() for exactly that reason: one is a phone call, the
+     * other is somebody using the microphone.
      */
-    @PluginMethod
-    public void callState(PluginCall call) {
+    private boolean commMode() {
+        try {
+            return mode() == AudioManager.MODE_IN_COMMUNICATION;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 85.3.5 - is anything at all playing on the music stream? Read only while the web
+     * layer is waiting to bring a song back, so it answers the one question that
+     * decides whether the speakers are free: is somebody else still making sound.
+     */
+    private boolean musicActive() {
+        try {
+            AudioManager am = manager();
+            return am != null && am.isMusicActive();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 85.3.5 - the whole answer in one object: a call, a ringing phone, somebody on
+     * the microphone, and whether another app is still making sound. Both callState()
+     * and focusState() return it, so a page that only knows the older name still gets
+     * the new facts. No permission is needed to read any of them.
+     */
+    private JSObject facts() {
         JSObject out = new JSObject();
         try {
             int m = mode();
             out.put("mode", m);
             out.put("ringing", m == AudioManager.MODE_RINGTONE);
             out.put("inCall", inCall());
+            out.put("comm", commMode());
+            out.put("musicActive", musicActive());
+            out.put("holding", holdingFocus);
         } catch (Exception e) {
-            // Unknown is reported as "no call": the song keeps playing.
             out.put("inCall", false);
             out.put("ringing", false);
+            out.put("comm", false);
+            out.put("musicActive", false);
         }
-        call.resolve(out);
+        return out;
+    }
+
+    /**
+     * 73.6 - the web layer asks this before it obeys any interruption, so that a
+     * messaging app's own sound cannot stop the music the way a phone call does.
+     * Answers are plain facts: inCall is true while a call is up or ringing.
+     */
+    @PluginMethod
+    public void callState(PluginCall call) {
+        // 85.3.5 - the same answer as focusState(), so an older page that only asks
+        // this question still learns about the microphone and the music stream.
+        call.resolve(facts());
+    }
+
+    /**
+     * 85.3.5 - the answer the web layer asks for every few seconds while it is waiting
+     * to bring a song back: is a call up, is somebody on the microphone, and is
+     * anything else still making sound. All three are readable without a permission,
+     * which is why the page can ask instead of guessing - and guessing wrong either
+     * leaves the music silent after another app, or plays it over one.
+     */
+    @PluginMethod
+    public void focusState(PluginCall call) {
+        call.resolve(facts());
     }
 
     /**
