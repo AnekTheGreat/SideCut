@@ -1,5 +1,83 @@
 # SideCut — repository memory
 
+## 85.3.13 (November 24, 2026): a size the phone cannot keep up with is given up again, and the walk ends when a smaller one is slower
+
+**The owner's report**: "now the music videos don't work". One release after the rate was
+limited to a single step, the tab went from a slideshow to no picture at all - and the limit
+is why. 85.3.12 asked the right question (a window is only read while the picture is showing)
+and drew the wrong conclusion from the answer: it gave the rate ONE size per film and then
+stopped. The phone this is for does not carry a sharp adaptive size at speed - that is the
+whole reason the rate is measured - so the one step it was allowed (4K to FULL HD, or FULL HD
+one size down) landed on a size that was also too heavy, and there it stayed: a frozen or
+few-frames-a-second stage for the whole film. 85.3.9's walk was the thing that had been
+saving the picture, and 85.3.12 removed it along with the false verdicts that made it bad.
+
+**WHAT THE SOURCE ANSWERED.** The player call was made from this sandbox before anything was
+changed (it has answered `LOGIN_REQUIRED` to datacenter addresses before, so it was worth
+checking): the ANDROID client returns `OK` with one muxed row (360p H.264) and 29 adaptive
+rows for a normal music video - 2160p, 1440p, 1080p, 720p, 480p, 360p, 240p, 144p, in H.264,
+VP9 and AV1, every one with a plain `url`. So the sizes are there and the app is what has to
+choose one it can carry. Nothing in the 85.3.12 diff can stop a film loading or playing, which
+is what put the report on the latch.
+
+**A SIZE IS GIVEN UP WHILE GIVING IT UP BUYS FRAMES.** `scVideoSlow` steps again, under three
+rules that keep 85.3.9's walk from coming back:
+
+  * it is **bounded** - `SC_VQ_RATE_STEPS` (4) sizes per film, then the picture stays where it
+    is and says so, instead of reloading its way to the bottom on every window;
+  * it **ends when a smaller size is slower** - the rate the size being left was showing is
+    kept (`rateBest`, the raw measure, not the rounded one) and a size that shows fewer frames
+    than the one above it is the phone's answer about what it can carry: the walk stops there
+    rather than costing sharpness and reload time for nothing;
+  * it **never writes into the size list** - `scVideoLand` takes a third argument for the rate
+    and skips the `deadH` mark, because a height the phone opens and merely cannot play fast
+    is not a height that "did not play here". 85.3.12's own harm - a sharp size marked dead
+    behind a demotion - cannot happen from the rate at all now.
+
+The 85.3.12 gate stays exactly as it shipped (`readyState < 2` or `seeking` restarts the
+window instead of judging it), the upscaler is still the first thing given up, `SC_VQ_FLOOR`
+is still 1080 and a hand-picked size is still the size that is tried. `scVideoState.slowDone`
+is gone; `rateSteps`, `rateNow` and `rateBest` replace it and are cleared by `scVideoLoad`
+with `slowH`.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85313.cjs` passes **37 assertions, 0 failed** - the sampler, the
+verdict and the step back cut out of `index.html` by name and brace and run in a vm against a
+fake element, a fake clock, a fake size list and a fake landing. The ones this release is
+about: a 4K picture at 2 fps lands on FULL HD in one move, spends one step and writes nothing
+into the size list; the size it lands on is measured in its own right and IS given up when it
+is slow too (the report, one line); the landing is told it is the rate asking; a smaller size
+showing more frames keeps the walk going and becomes the rate the next step is compared
+against; a smaller size that is slower ends the walk where it is, applies nothing, lands
+nowhere and says which size it is staying on; a film that has spent `SC_VQ_RATE_STEPS` steps
+stops; the upscaler still goes first and the size follows on the next verdict; the 85.3.12
+gate still holds (no data, not loaded, a seek - no verdict); `scVideoSlow` carries no `deadH`
+write at all and `scVideoLand` marks the height it left only when it is not the rate asking;
+the budget is read before the function touches anything; the three per-film values are
+cleared together by `scVideoLoad` and carried by the state; `slowDone` appears nowhere in the
+page. All 10 inline scripts parse, the page and the shell cache are 85.3.13, and the notes
+entry is above 85.3.12 and carries no word the Play channel filters. The 85.3.12 (**33**, with
+the latch assertions rewritten for this release's contract and a note in the file saying so),
+85.3.11 (**22**), 85.3.10 (**32**), 85.3.9 (**46**, with its "the height is marked in the
+list" assertion rewritten - the rate no longer marks), 85.3.8 (**57**), 85.3.7 (**66**) and
+85.3.6 (**74**) sets still pass. Both OTA channels rebuilt to a fixed point and verify with
+`--check`.
+
+Not checked: **no phone.** Nothing was watched, so what is proven is how far the walk goes and
+what ends it - not that a particular phone now shows a particular size at a watchable rate.
+Which size a given phone can actually carry is still the one thing this code cannot know in
+advance: the walk finds it by trying, which costs one reload per step (up to four) and shows
+up as "Changing to 720p..." in the bar. A film whose every size is slow ends on the last size
+it stepped to and says the size under it is slower; the size list is one tap away, and its
+heights are honest because the rate never marks them. The player call above was made from
+this sandbox, not from the owner's phone - it proves the sizes exist, not what this phone
+decodes.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1329424 bytes**, `ota-play/updates.json` **1329438 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.12 (November 24, 2026): a sharp size is judged while it is showing, and it is judged once
 
 **The owner's report**: "now the higher quality videos dont work". One release after the rate

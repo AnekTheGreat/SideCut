@@ -65,7 +65,7 @@ console.log('\n1. The rate the picture is really showing is measured, not guesse
 // =============================================================================
 const perfSrc = [
   constLine('SC_VQ_MIN_FPS'), constLine('SC_VQ_MIN_CLOCK'), constLine('SC_VQ_PERF_MS'),
-  constLine('SC_VQ_PERF_ROUNDS'), constLine('SC_VQ_FLOOR'),
+  constLine('SC_VQ_PERF_ROUNDS'), constLine('SC_VQ_FLOOR'), constLine('SC_VQ_RATE_STEPS'),
   grab('scVideoFrames'), grab('scVideoPerfReset'), grab('scVideoRateText'),
   grab('scVideoPerfSample'), grab('scVideoPerfVerdict'),   grab('scVideoDead'), grab('scVideoLive'),
   grab('scVideoDefault'), grab('scVideoRungFor')
@@ -177,7 +177,7 @@ console.log('\n2. A size this phone cannot keep up with is not the size you are 
   const moved = r.U.scVideoSlow();
   ok('a 4K size that runs at two frames a second is given up', moved === true);
   ok('it lands on FULL HD in one move, not one height at a time', JSON.stringify(r.calls.apply) === '[[1080,true]]', JSON.stringify(r.calls.apply));
-  ok('the height that could not keep up is marked in the list', r.state.deadH[2160] === 1, JSON.stringify(r.state.deadH));
+  ok('the height that could not keep up is NOT written into the size list', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
   ok('1440p is not marked - it was never tried', !r.state.deadH[1440]);
   ok('the footer names the size and the rate', /4K was showing 2 frames a second/.test(r.calls.foot[0]) && /1080p/.test(r.calls.foot[0]), r.calls.foot[0]);
 }

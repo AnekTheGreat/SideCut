@@ -64,7 +64,7 @@ const fourRungs = [
 
 const perfSrc = [
   constLine('SC_VQ_MIN_FPS'), constLine('SC_VQ_MIN_CLOCK'), constLine('SC_VQ_PERF_MS'),
-  constLine('SC_VQ_PERF_ROUNDS'), constLine('SC_VQ_FLOOR'),
+  constLine('SC_VQ_PERF_ROUNDS'), constLine('SC_VQ_FLOOR'), constLine('SC_VQ_RATE_STEPS'),
   grab('scVideoFrames'), grab('scVideoPerfReset'), grab('scVideoRateText'),
   grab('scVideoPerfSample'), grab('scVideoPerfVerdict'), grab('scVideoSlow'),
   grab('scVideoDead'), grab('scVideoLive'), grab('scVideoDefault'), grab('scVideoRungFor')
@@ -80,7 +80,7 @@ function perfRun(opts) {
     open: true, bg: null, perf: null, perfBad: 0, fps: 0, fxOn: o.fxOn !== false,
     fxBlocked: !!o.blocked, fxManual: !!o.manual, scrubbing: false,
     rung: o.rung || null, rungs: o.rungs || fourRungs, deadH: {}, slowH: {},
-    slowDone: o.slowDone || 0
+    rateSteps: o.rateSteps || 0, rateNow: o.rateNow || 0, rateBest: o.rateBest || 0
   };
   const el = {
     src: 'x', paused: !!o.paused, ended: false, currentTime: 0, frames: 0,
@@ -158,67 +158,58 @@ console.log('\n1. A picture that is waiting for its data has not been slow');
 }
 
 // =============================================================================
-console.log('\n2. One size for the rate, not a walk down the list');
+console.log('\n2. A sharp size goes to FULL HD in one move, and a height is never marked by the rate');
 // =============================================================================
+// 85.3.13 PUT THE STEP BACK. This section used to assert the latch 85.3.12 shipped - one size
+// for the rate and then nothing - which is exactly what left a phone that cannot show a sharp
+// size sitting on it. The assertions whose contract changed are rewritten here (a size IS
+// given up again, and the size list is NOT written); what is left is 85.3.12's own subject:
+// the move is straight to FULL HD, a height is not taken away twice, and a rate verdict never
+// lands in the size list.
 {
-  // 4K is too heavy for this phone: one step to FULL HD, and that is the film's answer.
+  // 4K is too heavy for this phone: one move to FULL HD, not one height at a time.
   const r = perfRun({ readyState: 4, fxOn: false, rung: fourRungs[0] });
   window3(r, 2);
   window3(r, 2);
   ok('a 4K picture at two frames a second lands on FULL HD', JSON.stringify(r.calls.apply) === '[[1080,true]]', JSON.stringify(r.calls.apply));
-  ok('the step is the film\'s one step', r.state.slowDone === 1, r.state.slowDone);
+  ok('one step is what it took', r.state.rateSteps === 1, r.state.rateSteps);
   ok('and the footer names the size and the rate', /4K was showing 2 frames a second/.test(r.calls.foot[0] || ''), r.calls.foot[0]);
+  ok('the height that could not keep up is not written into the size list', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
+  ok('and 1440p is not marked - it was never tried', !r.state.deadH[1440]);
   const footAfterStep = r.calls.foot.length;
-  // THE WALK. FULL HD on this phone is still short of frames - 85.3.9 would have taken it
-  // away too, then 720p, then 480p, and the sizes would be marked dead behind it.
+  // FULL HD is short of frames on this phone too, so the picture moves on - one size at a
+  // time, still without touching the list.
   window3(r, 2);
   window3(r, 2);
-  window3(r, 2);
-  window3(r, 2);
-  ok('a second size is never taken away by the rate', r.calls.apply.length === 1, JSON.stringify(r.calls.apply));
-  ok('nothing is landed on either', r.calls.land === 0, r.calls.land);
-  ok('and it does not keep saying so', r.calls.foot.length === footAfterStep, r.calls.foot.length + ' / ' + footAfterStep);
-  ok('the list only marks the height that was really too heavy', JSON.stringify(r.state.deadH) === '{"2160":1}', JSON.stringify(r.state.deadH));
+  ok('a size the picture landed on is measured and may be given up as well', r.state.rateSteps === 2, r.state.rateSteps);
+  ok('the landing is told that it is the rate asking', r.calls.land > 0, r.calls.land);
+  ok('so the size list is still untouched', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
+  ok('and the picture says what it is doing', r.calls.foot.length > footAfterStep, r.calls.foot.length);
 }
 {
-  // The same phone on a 1080p film: one step down to 720p, then the picture stays there.
+  // The same phone on a 1080p film: it lands from FULL HD, and that height is not tried again.
   const r = perfRun({ readyState: 4, fxOn: false, rung: fourRungs[2], land: true });
   window3(r, 3);
   window3(r, 3);
-  ok('a FULL HD picture that cannot keep up is landed once', r.calls.land === 1, r.calls.land);
-  window3(r, 3);
-  window3(r, 3);
-  window3(r, 3);
-  ok('and not landed again at the size it landed on', r.calls.land === 1, r.calls.land);
-  ok('the step back is refused once the film has spent it', r.U.scVideoSlow() === false);
+  ok('a FULL HD picture that cannot keep up is landed from', r.calls.land === 1, r.calls.land);
+  ok('and that height is not taken away a second time', r.U.scVideoSlow() === false && r.calls.land === 1, r.calls.land);
 }
 {
-  // A tap on HD+ by hand is still not argued with, and the size may still step back once.
+  // A tap on HD+ by hand is still not argued with; the size may still step back.
   const r = perfRun({ readyState: 4, fxOn: true, manual: true, rung: fourRungs[0] });
   window3(r, 2);
   window3(r, 2);
   ok('a tap on HD+ keeps the upscaler', r.calls.fx === 0 && r.state.fxBlocked === false, r.calls.fx);
-  ok('and the size still gets its one step', r.calls.apply.length === 1, JSON.stringify(r.calls.apply));
+  ok('and the size steps back', r.calls.apply.length === 1, JSON.stringify(r.calls.apply));
 }
 {
-  // Already spent, and the upscaler happens to still be on: it may come off - that costs the
-  // picture nothing - but no size moves.
-  const r = perfRun({ readyState: 4, fxOn: true, slowDone: 1, rung: fourRungs[2] });
-  window3(r, 2);
-  window3(r, 2);
-  window3(r, 2);
-  window3(r, 2);
-  ok('a film that has spent its step still loses the upscaler', r.calls.fx === 1 && r.state.fxBlocked === true, r.calls.fx);
-  ok('and takes no second size away', r.calls.apply.length === 0 && r.calls.land === 0, JSON.stringify(r.calls.apply));
+  const r = perfRun({ readyState: 4, fxOn: false, rateSteps: 4, rung: fourRungs[2] });
+  ok('a film that has spent its sizes does not step again', r.U.scVideoSlow() === false, r.state.rateSteps);
+  ok('and the budget is read before it touches anything', /if\(steps >= SC_VQ_RATE_STEPS\) return false;/.test(grab('scVideoSlow')));
 }
-{
-  const r = perfRun({ readyState: 4, fxOn: false, slowDone: 1, rung: fourRungs[2] });
-  ok('the step back is a latch, not a per-height rule', r.U.scVideoSlow() === false, r.state.slowDone);
-  ok('the function says so before it touches anything', /if\(st\.slowDone\) return false;/.test(grab('scVideoSlow')));
-}
-ok('a new film gives the rate its one step again', /scVideoState\.slowDone = 0;/.test(grab('scVideoLoad')));
-ok('the state carries the latch', /slowDone: 0/.test(page));
-ok('the latch is cleared with the rest of the per-film memory', /scVideoState\.slowH = \{\};\n\s*scVideoState\.slowDone = 0;/.test(grab('scVideoLoad')));
+ok('a new film gives the rate its sizes again', /scVideoState\.rateSteps = 0;/.test(grab('scVideoLoad')));
+ok('the state carries the budget', /rateSteps: 0, rateNow: 0, rateBest: 0/.test(page));
+ok('the budget is cleared with the rest of the per-film memory', /scVideoState\.slowH = \{\};\n\s*scVideoState\.rateSteps = 0;/.test(grab('scVideoLoad')));
 
 // =============================================================================
 console.log('\n3. The release itself');
