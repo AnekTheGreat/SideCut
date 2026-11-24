@@ -1,5 +1,91 @@
 # SideCut — repository memory
 
+## 85.3.9 (November 24, 2026): the picture is measured, and a size this phone cannot keep up with is not the one you are stuck with
+
+**The owner's report**: "now it runs at 2fps". One release after the size was made the size
+that is tried, the picture arrived - and it arrived as a slideshow. That is what a sharp
+size costs on a phone that cannot decode it at speed: a 4K VP9 or AV1 row with no hardware
+decoder behind it, or a 1080p row decoded in software while the upscaler asks for four draws
+of the whole stage on top of every frame (a fill, a blurred copy, that copy taken out of the
+frame, the frame, then the outlines laid back with `lighter`). Two frames a second is the
+rate of a picture this phone will not carry, and no amount of picking the size for it was
+going to answer that.
+
+**SO THE RATE IS MEASURED, ON THE DEVICE.** `scVideoPerfSample` reads the film's own element
+from the tick that already drives the picture: `getVideoPlaybackQuality()` where the WebView
+has it (frames shown against frames dropped), the element's own clock where it does not - a
+film that advances with real time is playing, one that does not is stalled. A window is
+`SC_VQ_PERF_MS` (2.5 s) of real time and the answer needs `SC_VQ_PERF_ROUNDS` (2) bad windows
+in a row, so one slow second on a busy network is not a verdict. Under `SC_VQ_MIN_FPS` (12)
+the picture is stuttering, not playing; with no frame counter the floor is
+`SC_VQ_MIN_CLOCK` (0.55) of real time.
+
+**AND WHAT IT MEASURES DECIDES, IN AN ORDER THAT COSTS THE LEAST.** First the upscaler comes
+off: it is the most expensive thing in the frame and a sharp size does not need it, so if the
+rate comes back with it off, the size was never the problem (`fxBlocked` for that film, the
+HD+ switch shows off, and a tap by hand turns it back on and is then not argued with -
+`fxManual`). If the size is STILL slow it is given up once per film (`slowH`): above FULL HD
+the picture lands on FULL HD in one move - the floor is where this tab opens, so it is where
+a size too heavy for the phone goes - and at or under the floor it lands on the sharpest size
+under it that answers, through the same `scVideoLand` the failure road uses. The height that
+could not keep up is marked in the size list, and the footer names the rate that was
+measured ("4K was showing 2 frames a second on this phone. Playing 1080p instead"). Every
+film is measured again from its own first frame, and `slowH` and `fxBlocked` are cleared by
+the next load.
+
+**A SHARP FRAME DOES NOT PAY FOR THE MASK.** `scVideoFxPaint` now builds the blurred copy and
+the difference buffer only under `SC_VFX_EDGE_H` (720): above it the outlines are already in
+the picture and inventing them cost a fill plus two full-stage draws of a filtered copy per
+frame. A soft film still gets the unsharp mask; a FULL HD one gets the resample and nothing
+else.
+
+**AND THE BUFFER IS A WINDOW IN BYTES, TOO.** `SC_VQ_STREAM_MAX_AHEAD` (16 MB) caps how far
+in front of the picture the app's own MediaSource window may reach, so 45 s of a 4K copy at
+20 Mbit/s is not 100 MB held in a phone's media buffer (a buffer that big is a reason for a
+stutter on its own); the window is at least 6 s and at most 45, whichever of the two limits
+bites first. The buffer is also told the film's length when the app knows it (`ms.duration`),
+because a seek into a buffer with no duration lands outside what is held and waits.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-8539.cjs` passes **46 assertions, 0 failed** - every function cut
+out of `index.html` by name and braces and run in a vm against fake elements, a fake clock,
+fake canvases and a fake MediaSource. The ones this release is about: 30 fps is left alone;
+one bad window is not a verdict; two bad windows take the upscaler off first and the footer
+names the measured rate; with the upscaler already off a slow size is given up; a tap on HD+
+by hand keeps the upscaler and only the size may step back; with no frame counter a film
+advancing with real time passes and one that has stopped advancing is acted on; a paused film
+and a tab with no element are not measured. A 4K size showing 2 frames a second lands on
+**1080p in one move** (1440p is not marked, it was never tried), the height is marked in the
+list and named with its rate; the same height is never taken away twice; at FULL HD the
+picture lands on the sharpest size under it and says so when there is none. A 1920x1080 frame
+is drawn with **no buffer and no `lighter` pass** and the context is left clean, while a
+480p frame still gets its blurred difference and its outlines back. A 300 MB / 100 s row
+reads **one** megabyte and waits (a 16 MB window is six seconds of that film), a light row
+still gets the whole window, and the buffer's `duration` is the film's 100 s. The sampler is
+called from `scVideoSync`, the rate is reset when a size is applied, and `slowH` is cleared
+by the next load. The 85.3.8 set still passes **57, 0 failed** - with three assertions
+rewritten for this release's contract (the page may be 85.3.8 or newer, the wait compares
+against the computed `aheadS`, and the window is capped by weight) - and 85.3.7 (**66**) and
+85.3.6 (**74**) still pass. All 10 inline scripts parse, the page and the shell cache are
+85.3.9, and the notes entry carries no word the Play channel filters. Both OTA channels
+rebuilt to a fixed point and verify with `--check`.
+
+Not checked: **no phone.** Nothing here was watched on a device, so what is proven is that
+the measurement produces the verdicts and the lines that follow from them, not that a
+particular phone decodes 4K VP9 at 2 fps while this app is the one asking. Which of the two
+costs - the decoder or the canvas - is unmeasured: the code takes the canvas off first
+because it is the cheaper thing to give back, and only then moves the size. A phone whose
+WebView reports `totalVideoFrames` honestly gets the frame count; one that does not is
+judged by its clock, which catches stalls but cannot see 2 fps. And `getVideoPlaybackQuality`
+counts decoded frames, not composited ones, so a picture that decodes fast and composites
+slowly is not distinguished from one that decodes slowly - both read as a rate the phone is
+not keeping up with, which is the answer the picture needs either way.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1326675 bytes**, `ota-play/updates.json` **1326688 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.8 (November 24, 2026): the size you asked for is the size that is tried, and the app plays it itself
 
 **The owner's report**: "you can get 1080p and 2K and 4K, why does this only work at 360p".

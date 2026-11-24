@@ -19985,7 +19985,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     landSeq: 0, pickSeq: 0,
     // 85.3.8 - a verdict the reader gave, a size on a short leash, and the buffer the
     // app feeds itself when the player will not open the size's own address.
-    suspect: false, refusedH: [], streamFor: null, streamUrl: '', streamBusy: false, watchMore: 0
+    suspect: false, refusedH: [], streamFor: null, streamUrl: '', streamBusy: false, watchMore: 0,
+    // 85.3.9 - the frames the picture is really showing, and the heights that could not
+    // keep up here. A size that plays at two frames a second is not a picture that plays.
+    fps: 0, perf: null, perfBad: 0, slowH: {}, fxBlocked: false, fxManual: false
   };
 
   var SC_VQ_KEY = 'scVideoQuality';
@@ -20000,6 +20003,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_PROBE_MS = 2500;               // a probe that has not answered by then is not a verdict
   var SC_VQ_STREAM_AHEAD = 45;             // seconds of film the app's own buffer keeps in front of the picture
   var SC_VQ_SUSPECT_MS = 6000;             // a size the reader refused gets this long to show a frame
+  var SC_VQ_MIN_FPS = 12;                  // under this the picture is stuttering, not playing
+  var SC_VQ_MIN_CLOCK = 0.55;              // with no frame counter, this much of real time is the floor
+  var SC_VQ_PERF_MS = 2500;                // the window a rate is measured over
+  var SC_VQ_PERF_ROUNDS = 2;               // that many bad windows in a row before the picture steps back
+  var SC_VQ_STREAM_MAX_AHEAD = 16 * 1048576; // the app's own buffer is a window, not a copy of a 4K film
+  var SC_VFX_EDGE_H = 720;                 // at or above this height the frame already has its edges
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
   var SC_VFX_AMOUNT = 0.6;                 // how much of the frame's own edges comes back
   var SC_VFX_BLUR = 'blur(1px)';           // the copy the edges are taken from
@@ -21220,7 +21229,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // of everything in the shot. Only that outline is added back, so flat areas stay
     // exactly where they were and the bright end is not lifted - which is what the
     // contrast-over-itself pass did, and why a low size looked washed instead of sharp.
-    var buf = scVideoFxBuff(W, H);
+    // A SHARP FRAME ALREADY HAS ITS EDGES. Above SC_VFX_EDGE_H the outlines the mask adds
+    // back are in the picture, and inventing them costs a fill plus two full-stage draws of
+    // a filtered copy for every frame - which on a phone showing a sharp size is the
+    // difference between a film and a slideshow. A soft film gets the mask; a sharp one
+    // gets the resample and nothing else.
+    var wantEdges = vh < SC_VFX_EDGE_H;
+    var buf = wantEdges ? scVideoFxBuff(W, H) : null;
     if(buf){
       var bx = buf.ctx;
       try{
@@ -21317,16 +21332,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoFxApply(){
     scVideoFxCanvas();
     var st = scVideoEl('scVideoStage'), b = scVideoEl('scVideoBoost');
-    var on = !!(scVideoState.open && scVideoState.fxOn && scVideoFxCv);
+    // THE SWITCH AND THE PICTURE ARE THE SAME ANSWER. A film that has had the upscaler taken
+    // off it for being short of frames shows the switch off too, or the button is a lie.
+    var on = !!(scVideoState.open && scVideoState.fxOn && !scVideoState.fxBlocked && scVideoFxCv);
     if(st) st.classList.toggle('sc-vfx', on);
     if(b){
-      b.classList.toggle('on', !!scVideoState.fxOn);
-      if(b.setAttribute) b.setAttribute('aria-pressed', scVideoState.fxOn ? 'true' : 'false');
+      b.classList.toggle('on', on);
+      if(b.setAttribute) b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     if(on) scVideoFxStart(); else scVideoFxStop();
   }
   function scVideoFxToggle(){
-    scVideoState.fxOn = !scVideoState.fxOn;
+    // A TAP IS THE OWNER ASKING. A film that had the upscaler taken off it is allowed it
+    // again by hand, and is then not argued with about the rate for the rest of that film.
+    if(scVideoState.fxBlocked){ scVideoState.fxBlocked = false; scVideoState.fxOn = true; }
+    else scVideoState.fxOn = !scVideoState.fxOn;
+    scVideoState.fxManual = !!scVideoState.fxOn;
+    scVideoState.perfBad = 0;
     scVideoFxPref(scVideoState.fxOn);
     scVideoFxApply();
     if(scVideoState.fxOn) scVideoAiSchedule();
@@ -21691,6 +21713,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // refused is tried anyway, but on a short leash, so a player that will not open it is
     // not a black stage for half a minute.
     scVideoState.suspect = !!suspect;
+    // A NEW SOURCE IS MEASURED FROM ITS OWN FIRST FRAME, not from the one that came before.
+    scVideoPerfReset();
     var hadSrc = !!(keep && v && v.src);
     var at = hadSrc ? (Number(v.currentTime) || 0) : null;
     var switching = !!(hadSrc && scVideoState.rung && scVideoState.rung.h !== rung.h);
@@ -21771,6 +21795,110 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoWatchStop(){
     if(scVideoState.watch){ clearTimeout(scVideoState.watch); scVideoState.watch = null; }
     scVideoState.watchToken = (scVideoState.watchToken || 0) + 1;
+  }
+
+  // ── the frames this phone is actually showing -------------------------------
+  // TWO FRAMES A SECOND IS NOT A PICTURE. 85.3.8 made the size the owner asked for the size
+  // that is tried, and on a phone the answer came back as a slideshow: a sharp adaptive row
+  // is decoded by whatever this WebView has, and a 4K VP9 or AV1 row with no hardware
+  // decoder behind it is a handful of frames a second - with the upscaler asking for four
+  // draws of the whole stage on top of each one. The size was right and the rate was wrong,
+  // so the rate is what this measures, on the device, instead of guessing from a codec name
+  // what a particular phone can decode.
+  function scVideoFrames(v){
+    try{
+      if(v && typeof v.getVideoPlaybackQuality === 'function'){
+        var q = v.getVideoPlaybackQuality() || {};
+        var all = Number(q.totalVideoFrames) || 0;
+        var lost = Number(q.droppedVideoFrames) || 0;
+        return { shown: Math.max(0, all - lost), all: all };
+      }
+    }catch(_eQual){}
+    try{
+      if(v && typeof v.webkitDecodedFrameCount === 'number'){
+        var dec = Number(v.webkitDecodedFrameCount) || 0;
+        var gone = Number(v.webkitDroppedFrameCount) || 0;
+        return { shown: Math.max(0, dec - gone), all: dec };
+      }
+    }catch(_eWeb){}
+    return null;
+  }
+  function scVideoPerfReset(){
+    scVideoState.perf = null;
+    scVideoState.perfBad = 0;
+    scVideoState.fps = 0;
+  }
+  function scVideoRateText(){
+    var f = Number(scVideoState.fps) || 0;
+    if(f <= 0) return 'only a part of its own seconds';
+    return f + (f === 1 ? ' frame a second' : ' frames a second');
+  }
+  // THE WINDOW IS THE ANSWER, NOT THE TICK. The element is looked at about once a second
+  // and the rate is read over SC_VQ_PERF_MS of real time, so one slow second is never a
+  // verdict - two windows in a row are.
+  function scVideoPerfSample(){
+    var st = scVideoState, v = scVideoEl('scVideoEl');
+    if(!st.open || st.bg || !v || !v.src || v.paused || v.ended || st.scrubbing){ st.perf = null; return; }
+    var now = 0;
+    try{ now = Date.now ? Date.now() : new Date().getTime(); }catch(_eNow){ now = 0; }
+    var frames = scVideoFrames(v);
+    var ct = Number(v.currentTime) || 0;
+    if(!st.perf){ st.perf = { at: now, shown: frames ? frames.shown : 0, clock: ct, meter: !!frames }; return; }
+    var ms = now - st.perf.at;
+    if(ms < SC_VQ_PERF_MS) return;
+    var metered = !!(frames && st.perf.meter);
+    var secs = ms / 1000;
+    // Frames the picture really showed when the phone counts them; on a phone that does not,
+    // its own clock is the witness - a film that advances with real time is playing, and one
+    // that does not is stalled.
+    var fps = metered ? ((frames.shown - st.perf.shown) / secs) : ((ct - st.perf.clock) / secs);
+    st.perf = { at: now, shown: frames ? frames.shown : 0, clock: ct, meter: !!frames };
+    scVideoPerfVerdict(fps, metered);
+  }
+  function scVideoPerfVerdict(fps, metered){
+    var st = scVideoState;
+    if(!isFinite(fps) || fps < 0) return;
+    var floor = metered ? SC_VQ_MIN_FPS : SC_VQ_MIN_CLOCK;
+    if(fps >= floor){ st.perfBad = 0; return; }
+    st.perfBad = (Number(st.perfBad) || 0) + 1;
+    if(st.perfBad < SC_VQ_PERF_ROUNDS) return;
+    st.perfBad = 0;
+    st.fps = metered ? (Math.round(fps * 10) / 10) : 0;
+    // THE UPSCALER IS THE CHEAPEST THING TO GIVE UP, SO IT GOES FIRST. Four draws of the
+    // whole stage for every frame is a real cost and a sharp size does not need the sharpen
+    // at all - if the rate comes back with it off, the size was never the problem. A tap on
+    // HD+ by hand overrides this for that film.
+    if(st.fxOn && !st.fxBlocked && !st.fxManual){
+      st.fxBlocked = true;
+      scVideoFxApply();
+      scVideoFoot('This picture was showing ' + scVideoRateText() +
+        ', so the upscaler is off for it - this size does not need one.');
+      return;
+    }
+    scVideoSlow();
+  }
+  // AND A SIZE THE PHONE CANNOT KEEP UP WITH IS NOT THE SIZE TO STAY ON. It is given up once
+  // per film: above FULL HD the picture lands on FULL HD in one move (the floor is where
+  // this tab opens, so it is where a size too heavy for the phone goes), and at or under the
+  // floor it lands on the sharpest size under it that answers.
+  function scVideoSlow(){
+    var st = scVideoState, from = st.rung;
+    if(!from || !Number(from.h) || !st.open) return false;
+    if(st.slowH[Number(from.h)]) return false;          // this height was given up on already
+    st.slowH[Number(from.h)] = 1;
+    var why = from.label + ' was showing ' + scVideoRateText() + ' on this phone.';
+    if(Number(from.h) > Number(SC_VQ_FLOOR)){
+      var to = scVideoRungFor(scVideoLive(st.rungs || []), SC_VQ_FLOOR);
+      if(to && Number(to.h) < Number(from.h)){
+        st.deadH[Number(from.h)] = 1;                   // the list stops offering it as if it played
+        scVideoApplyRung(to, true);
+        scVideoFoot(why + ' Playing ' + to.label + ' instead, which this phone keeps up with.');
+        return true;
+      }
+    }
+    if(scVideoLand(why, 'Nothing smaller keeps up here either - pick a size from the list, or NEXT.')) return true;
+    scVideoFoot(why + ' There is no smaller size for this video to land on.');
+    return false;
   }
 
   function scVideoAttach(src, via, switching){
@@ -22108,6 +22236,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var v = scVideoEl('scVideoEl');
     if(!v || !v.src) return;
     scVideoState.filmPlaying = v.paused ? 0 : 1;
+    // HOW MANY FRAMES A SECOND THIS PHONE IS REALLY SHOWING. Measured on the film's own
+    // element while it runs, and it is what decides whether a size is a picture or a
+    // slideshow.
+    scVideoPerfSample();
     if(scVideoState.scrubbing){ scVideoClock(); return; }
     // THE PICTURE IS THE CLOCK when a paired track carries the sound. The
     // soundtrack is nudged onto the picture, never the other way round: a seek
@@ -22369,7 +22501,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
       // KEEP THE BUFFER IN FRONT OF THE PICTURE, NOT THE WHOLE FILM IN MEMORY. Once the film
       // is held this far ahead the reader waits, and the picture asks again as it plays.
-      if(bps > 0 && off > 0 && held() > ((Number(v && v.currentTime) || 0) + SC_VQ_STREAM_AHEAD)){
+      // THE BUFFER IS A WINDOW, NOT A COPY. Forty-five seconds of a 4K copy at twenty
+      // megabits a second is a hundred megabytes held in a phone's media buffer, and a
+      // buffer that big is a reason for a stuttering picture on its own - so the window is
+      // capped by weight as well as by seconds, and a sharp size keeps seconds of film in
+      // memory rather than minutes.
+      var aheadS = Number(SC_VQ_STREAM_AHEAD) || 45;
+      if(bps > 0) aheadS = Math.max(6, Math.min(aheadS, SC_VQ_STREAM_MAX_AHEAD / bps));
+      if(bps > 0 && off > 0 && held() > ((Number(v && v.currentTime) || 0) + aheadS)){
         scVideoState.streamBusy = false;
         setTimeout(pump, 900);
         return;
@@ -22404,6 +22543,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }).catch(function(){ reading = false; scVideoStreamDown(rung, 'the read failed'); });
     }
     ms.addEventListener('sourceopen', function(){
+      // A LENGTH THIS APP KNOWS IS A LENGTH THE BUFFER SHOULD KNOW. Without it a seek to the
+      // second the song is on lands outside what is held and the picture waits.
+      if(dur > 1){ try{ ms.duration = dur; }catch(_eDur){} }
       try{ sb = ms.addSourceBuffer(rung.mime); }
       catch(_eSb){ scVideoStreamDown(rung, 'this phone will not take this size in a buffer'); return; }
       pump();
@@ -22524,6 +22666,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.openedAt = scVideoSongTime();
     scVideoCoverHide();
     scVideoState.videoId = String(cand.videoId || '');
+    // EVERY FILM IS MEASURED AGAIN. A size too slow for one recording says nothing about the
+    // next, and the upscaler a slow film lost comes back with the new one.
+    scVideoState.slowH = {};
+    scVideoState.fxBlocked = false;
+    scVideoState.fxManual = false;
+    scVideoPerfReset();
     if(scVideoState.blobUrl){ try{ URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eOld){} scVideoState.blobUrl = ''; }
     var v = scVideoEl('scVideoEl');
     if(v){ try{ v.pause(); }catch(_eP){} try{ v.removeAttribute('src'); v.load(); }catch(_eC){} }
@@ -24060,7 +24208,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.8';
+  const APP_VERSION = '85.3.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24770,6 +24918,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.9', date: 'November 24, 2026', title: 'The picture is measured, and a size this phone cannot keep up with is not the one you are stuck with', items: [
+      'The picture is now measured by the frames it really shows on this phone, and a size that manages only a couple of frames a second is no longer left on the screen as if it were playing.',
+      'The upscaler is the first thing to come off when a picture is short of frames: it costs four draws of the whole stage for every frame, and a sharp size does not need it.',
+      'A size above FULL HD that cannot keep up lands on FULL HD in one move instead of running as a slideshow, and the size list marks the height that could not.',
+      'A size picked by hand is not taken away twice: pick it again and the tab leaves the picture where you put it.',
+      'The buffer kept in front of a sharp picture is capped in memory as well as in seconds, so a 4K copy no longer fills the phone with a buffer that is a reason for stuttering on its own.'
+    ] },
     { version: '85.3.8', date: 'November 24, 2026', title: 'The size you asked for is the size that is tried, and the app plays it from its own reader', items: [
       'A verdict from the reader is no longer a verdict on the picture: the size you asked for is always played, so a phone that plays FULL HD is never talked down to 360p by a range request that happened to be refused.',
       'A sharp size the player will not open is now read by the app itself, one megabyte at a time, into the media buffer - so 1080p, 2K and 4K no longer depend on the player accepting the address or on the phone holding the whole film in memory.',

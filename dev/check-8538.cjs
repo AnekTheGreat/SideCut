@@ -131,7 +131,7 @@ function pickRun(opts) {
   console.log('\n2. A size the player will not open is read by the app and played from memory');
   // =============================================================================
   const streamSrc = [
-    constLine('SC_VQ_STREAM_AHEAD'),
+    constLine('SC_VQ_STREAM_AHEAD'), constLine('SC_VQ_STREAM_MAX_AHEAD'),
     grab('scVideoStreamOk'), grab('scVideoStreamDrop'), grab('scVideoStreamDown'), grab('scVideoStream')
   ].join('\n');
   function fakeMse(bufferedEnd) {
@@ -259,7 +259,8 @@ function pickRun(opts) {
     r.U.scVideoStream(row);
     ok('one attempt per size, never a loop', r.U.scVideoStream(row) === false);
   }
-  ok('the buffer is kept in front of the picture, not the whole film', /SC_VQ_STREAM_AHEAD/.test(streamSrc) && /held\(\) > \(\(Number\(v && v\.currentTime\) \|\| 0\) \+ SC_VQ_STREAM_AHEAD\)/.test(streamSrc));
+  ok('the buffer is kept in front of the picture, not the whole film', /SC_VQ_STREAM_AHEAD/.test(streamSrc) && /held\(\) > \(\(Number\(v && v\.currentTime\) \|\| 0\) \+ aheadS\)/.test(streamSrc));
+  ok('and the window is capped by weight as well as by seconds', /SC_VQ_STREAM_MAX_AHEAD \/ bps/.test(streamSrc), streamSrc.match(/aheadS = [^\n]+/));
   ok('the app\'s own buffer is released when a new film starts', /scVideoStreamDrop\(\);/.test(grab('scVideoLoad')));
 
   // =============================================================================
@@ -394,7 +395,7 @@ function pickRun(opts) {
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   }
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on 85.3.8', vPage === '85.3.8', vPage);
+  ok('the page is on 85.3.8 or newer', /^85\.3\.(8|9)$/.test(vPage), vPage);
   ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
   ok('the notes carry the 85.3.8 entry', page.includes("version: '85.3.8'"));
   ok('the new entry is above 85.3.7', page.indexOf("version: '85.3.8'") < page.indexOf("version: '85.3.7'"));
