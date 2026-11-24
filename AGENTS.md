@@ -1,5 +1,89 @@
 # SideCut — repository memory
 
+## 85.3.8 (November 24, 2026): the size you asked for is the size that is tried, and the app plays it itself
+
+**The owner's report**: "you can get 1080p and 2K and 4K, why does this only work at 360p".
+Four releases had answered this tab by guessing at the source, and 85.3.7 was the fourth
+guess: it decided a row on the ladder was not a picture that plays, probed each size through
+the native reader, and let a verdict about one range request decide what the viewer saw. So
+this release started by measuring instead.
+
+**WHAT THE MEASUREMENTS SAID.** The ANDROID player call returns 29 adaptive rows and one
+muxed row - 2160p, 1440p, 1080p, 720p, 480p, 360p, 240p, 144p - every one of them with a
+plain `url` and no `n` throttle. A 2-byte range, a 4 MB range and the exact 2 MiB offset
+probe the tab makes all answer **206** on the 1080p row and on the 4K row, with the Android
+app UA, a Chrome UA, an okhttp UA and no UA at all. A media element in a real engine opens
+the 1080p row (1920x1080, readyState 4, the clock advancing) and the 4K row (3840x2160, the
+same). And the app's own ladder and pick, driven in the real page against real rows, already
+chose **1080p H.264** and played it. The sharp rows were never the problem: the app was.
+85.3.7 attached a size it had just been told was refused, and it would only rescue a refused
+row by holding the whole file, which no 1080p film fits inside.
+
+**A VERDICT IS NOT A VERDICT ON THE PICTURE.** `scVideoPick` no longer drops the asked size
+on the reader's word: the ask is always the size that is tried, and the heights the reader
+refused come back as `refused` for the list and as `suspect` for the picture's leash. A size
+on that leash gets `SC_VQ_SUSPECT_MS` (6 s) to produce a frame instead of the size-scaled
+window, and the landing behind it is still one jump to a size that answered. `scVideoLoad`
+no longer writes those heights into `deadH` before the element has had its say - that is how
+"did not play here" used to appear beside the size that was playing.
+
+**AND THE APP PLAYS THE SIZE ITSELF.** New `scVideoStream(rung)`: when the element will not
+open a sharp row's own address, the row is read through the reader the downloader already
+uses - one-megabyte ranges - into a `MediaSource`, and the element plays this app's own blob.
+`SC_VQ_STREAM_AHEAD` (45 s) is kept in front of the picture and no more, so a 358 MB 4K copy
+is never a 358 MB allocation; the reader waits when it is far enough ahead and resumes as the
+film plays. One attempt per size, closed at the end of the row, and guarded on
+`MediaSource`/`isTypeSupported` so a phone without a media buffer is told nothing but the
+truth. It is tried in `scVideoFailed` **before** the whole-file read, so a 1080p, 2K or 4K
+film the player refuses is the same picture, read by the app.
+
+**A SIZE THAT IS STILL FETCHING GETS ONE MORE WINDOW.** The silent-source watch treated
+`networkState === 2` as an answer that repeats forever, which is how a size that never
+arrived could hold a black stage for a whole song. It now gets exactly one more window of the
+same length (`scVideoState.watchMore`), then it is judged by what it produced.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-8538.cjs` passes **56 assertions, 0 failed**; the 85.3.7 set
+(`dev/check-8537.cjs`) passes **66, 0 failed** with the three assertions whose contract this
+release changed rewritten (a refused size is tried rather than swapped out, two refusals do
+not silence the ask, and the release is at or above 85.3.7), and 85.3.6 still passes **74, 0
+failed**. Every function is cut out of `index.html` by name and braces and run in a vm. The
+ones this release is about: a refused ask is still the size that is tried and carries the
+leash; a hand-picked 4K refused by the reader is still tried; the load path keeps refusals as
+a leash and hands it to the applied size; the row is read in 1 MB ranges from 0, each range
+never wider than a megabyte, each chunk reaching the buffer, the buffer closed at the row's
+end, the source buffer carrying the row's own codec string; a 100 MB 4K row is **one** read
+when the buffer is already 400 s ahead; a read that stops early ends the buffer instead of
+hanging; a read that comes back with nothing gives the size up and says so; a one-stream row,
+a blob row, a phone without `MediaSource` and a second attempt on the same size are all
+declined; a size on the leash waits 6 s and one nobody doubted keeps its weight-earned
+window; a size still fetching gets exactly one more window and a second empty window is a
+dead size; the failure road reads the row itself **before** it reads the whole file, and
+never for a one-stream row. All 10 inline scripts parse, the page and the shell cache are
+85.3.8, and the notes entry carries no word the Play channel filters. Both OTA channels
+rebuilt to a fixed point and verify with `--check`.
+
+**Measured live, in a real engine, on the real page** (a local proxy for the player call, the
+app's own module driven through a build/open/start door, and the real googlevideo rows): the
+tab opened a real video on **1080p H.264, 1920x1080, readyState 3-4, the clock advancing for
+eight seconds**, and the new reader path played the **2160p VP9 row - 3840x2160, readyState
+4, the clock advancing for fourteen seconds** - from the app's own buffer, with the film kept
+45 s ahead.
+
+Not checked: no phone. The live run above is Chromium, so what is proven is that the size the
+pick chooses plays and that the reader path plays a 4K row end to end - not that this
+particular APK's WebView accepts a `MediaSource` for VP9 (the code declines the path when
+`isTypeSupported` says no and lands on the next size instead), and not how a phone's reader
+behaves over mobile data while the film plays 45 s behind it. The 6 s leash was proven as a
+deadline, not as a stopwatch on a slow connection; a 1080p row that needs longer than that to
+show its first frame on a busy network will land on the next size down and say so in the
+footer, which is the trade this release makes on purpose.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1323726 bytes**, `ota-play/updates.json` **1323742 bytes**. Page-only: no native
+change, so the APK is not rebuilt.
+
 ## 85.3.7 (November 24, 2026): a size is checked before it is shown, and the picture is never left empty
 
 **The owner's report**: "the video streams keep coming empty with any other video quality -

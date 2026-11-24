@@ -100,23 +100,27 @@ const adaptiveOnly = [
     ok('the ask is reported back to the caller', picked.asked && picked.asked.h === 1080);
   }
   {
+    // 85.3.8 - the contract this assertion used to state changed: a verdict from the reader
+    // no longer takes the size off the screen. The ask is played, on a short leash.
     const r = pickRun({ rungs: fourRungs, refuse: [1080] });
     const picked = await r.U.scVideoPick(fourRungs, 1080);
-    ok('a 1080p row this source will not serve is not the size that plays', picked.rung.h === 720, picked.rung.h);
+    ok('a size the reader refused is still the size that is tried', picked.rung.h === 1080, picked.rung.h);
     ok('the size that refused is named in the answer', picked.refused.join(',') === '1080', picked.refused.join(','));
     ok('the size that was asked for is still reported', picked.asked.h === 1080);
-    ok('it is one jump, not a walk: 720p is the very next size under it', r.asked.slice(0, 2).join(',') === 'u1080,u720', r.asked.join(','));
+    ok('and that picture is put on a short leash', picked.suspect === true, picked.suspect);
+    ok('the size under it is asked in the same round, so the landing has somewhere to go', r.asked.slice(0, 2).join(',') === 'u1080,u720', r.asked.join(','));
   }
   {
     const r = pickRun({ rungs: fourRungs, refuse: [1080, 720] });
     const picked = await r.U.scVideoPick(fourRungs, 1080);
-    ok('when every sharp size refuses the picture lands on the one-stream row', picked.rung.h === 480 && picked.rung.muxed === true, picked.rung.h);
+    ok('two refusals do not silence the size that was asked for', picked.rung.h === 1080, picked.rung.h);
+    ok('both refused heights are named', picked.refused.sort().join(',') === '1080,720', picked.refused.join(','));
     ok('the one-stream row is never asked - it is the row that always plays', !r.asked.includes('u480'), r.asked.join(','));
   }
   {
     const r = pickRun({ rungs: adaptiveOnly, refuse: [1080, 720, 360] });
     const picked = await r.U.scVideoPick(adaptiveOnly, 1080);
-    ok('when nothing answers the ask is kept for the failure road', picked.rung.h === 1080);
+    ok('when nothing answers the ask is still the size that is tried', picked.rung.h === 1080);
     ok('and every refused size is named', picked.refused.sort().join(',') === '1080,360,720', picked.refused.join(','));
   }
   {
@@ -216,6 +220,7 @@ const adaptiveOnly = [
       scVideoEl() { return el; },
       scVideoWatchStop() {}, scVideoSpin() {}, scVideoBig() {},
       scVideoRescue() { return false; },
+      scVideoStream() { return false; },      // 85.3.8 reads the row itself first; see check-8538
       scVideoReadCap() { return 40 * 1024 * 1024; },
       scVideoLand(why, none) { calls.land.push(why); calls.none = none; return false; },
       scVideoRead() { calls.read++; },
@@ -328,10 +333,10 @@ const adaptiveOnly = [
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   }
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on 85.3.7', vPage === '85.3.7', vPage);
+  ok('the page is on a version at or above 85.3.7', /^85\.3\.[7-9]$/.test(vPage), vPage);
   ok('the shell cache is on the same version', sw.includes("sidecut-shell-v" + vPage), vPage);
-  ok('the notes carry the new entry', page.includes("version: '85.3.7'"));
-  ok('the new entry is above 85.3.6', page.indexOf("version: '85.3.7'") < page.indexOf("version: '85.3.6'"));
+  ok('the notes carry the 85.3.7 entry', page.includes("version: '85.3.7'"));
+  ok('the 85.3.7 entry is above 85.3.6', page.indexOf("version: '85.3.7'") < page.indexOf("version: '85.3.6'"));
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

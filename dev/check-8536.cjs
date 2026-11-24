@@ -71,6 +71,7 @@ function failureRun(opts) {
     scVideoEl() { return el; },
     scVideoWatchStop() {}, scVideoSpin() {}, scVideoBig() {},
     scVideoRescue() { return false; },
+    scVideoStream() { return false; },      // 85.3.8 reads the row itself first; see check-8538
     // 85.3.7 - the refusal is handed to the probed landing; here it declines, so these
     // assertions still describe "nothing under this size answers".
     scVideoLand() { return false; },
