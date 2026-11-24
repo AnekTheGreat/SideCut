@@ -1,5 +1,60 @@
 # SideCut — repository memory
 
+## 85.3.11 (November 24, 2026): the library opens on the view you set, and the glyph above it agrees
+
+**The owner's report**: "if I have the default set to albums it should open to albums and the
+icon for it, not the icon for playlists or what's first".
+
+**TWO FACTS, ONE OF THEM NEVER TOLD.** Since 85.3.2 the Boot view setting is applied to
+`libraryMode`, which is what the list draws. The rail keeps a page of its own,
+`scShelf.page`, which starts at `'library'` - the first glyph, Songs - and only a glyph tap
+ever moved it. So a library that opened on Albums drew the albums in the list and lit the
+**Songs** glyph above it, all session, until a glyph was tapped. `navigate('library')` lit
+the old split-pill halves (`#playlistsHalf` / `#albumsHalf`, which have not existed in the
+markup since 80.6.29) and nothing else, so the one icon the screen actually shows was the
+one thing it did not touch.
+
+**THE MODE MOVES THE GLYPH.** New `scShelfModeFollow()`: when `libraryMode` differs from the
+mode the rail last agreed with (`scShelf.modeAt`), the page is set to
+`scShelfPageForMode()` - `albums` or `playlists` - and the rail is repainted. It is called
+from the library branch of `navigate()`, which every door goes through, so boot, the tabs
+inside the library, a download landing and a streaming link all bring the glyph with them.
+
+**AND A GLYPH TAP IS NEVER OVERRULED.** `'library'` (the Songs page) means the playlists
+mode, so the mode alone cannot say which of the two playlists pages is up. `scShelfApply()`
+- the one painter a glyph tap goes through - records the mode that page means
+(`scShelf.modeAt`), so the follow sees "already agreed" and leaves the owner's page exactly
+where the tap put it. `scOpenLibraryAfterDownload()`, which deliberately lands on All Songs,
+pins the Songs page the same way.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85311.cjs` passes **22 assertions, 0 failed** - `scShelfPageForMode`
+and `scShelfModeFollow` cut out of `index.html` by name and brace and run in a vm with a fake
+rail. The ones this release is about: a library on the Albums setting lights the **Albums**
+glyph and repaints the rail (the report, one line); a page picked with a glyph (Songs, in a
+mode that says playlists) is left alone and nothing is repainted; leaving Albums by a tab
+inside the library moves the glyph to Playlists and going back lights Albums; an unchanged
+mode never moves anything; the Playlists setting lights the Playlists glyph; a build with no
+rail yet is not an error; and the two modes map to exactly two pages, with an empty or
+missing mode reading as playlists. Asserted on the page: `navigate()`'s library branch calls
+the follow, `scShelfApply()` records `modeAt`, the download landing pins `scShelf.page =
+'library'` with that mode, the shelf carries `modeAt: ''`, and the glyph is still marked from
+`scShelf.page` and nothing else. All 10 inline scripts parse, the page and the shell cache
+are 85.3.11, the notes entry is above 85.3.10 and carries no word the Play channel filters.
+The 85.3.10 (**32**), 85.3.9 (**46**), 85.3.8 (**57**), 85.3.7 (**66**) and 85.3.6 (**74**)
+sets still pass. Both OTA channels rebuilt to a fixed point and verify with `--check`.
+
+Not checked: **nothing was rendered.** No phone and no browser session drew the rail, so what
+is proven is which page the rail is told it is on and when it is repainted - not that a
+particular rail glyph is the lit one on a screen. The rail's own hit areas, the shape of the
+lit glyph and the order of the glyphs were not touched by this release. A stored Boot view of
+Playlists keeps lighting the Playlists glyph, which is the setting doing its job.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1328012 bytes**, `ota-play/updates.json` **1328026 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.10 (November 24, 2026): a song the earbuds paused is a song the earbuds can start again
 
 **The owner's report**: "on my nothing ear 3, I should be able to unpause songs paused by

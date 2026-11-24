@@ -19629,7 +19629,32 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // app's own screen (library or albums); `src` is 'd' for what is on the device and
   // 's' for what plays from the source. Streaming is no longer a page apart: it is
   // the other side of the page that is already up.
-  var scShelf = { page: 'library', src: 'd', open: false, built: false };
+  var scShelf = { page: 'library', src: 'd', open: false, built: false, modeAt: '' };
+  // 85.3.11 - THE GLYPH IS THE PAGE THE LIBRARY IS SHOWING.
+  // The rail's page started at the first glyph ('library') and only a glyph tap ever
+  // moved it. The Boot view was applied to libraryMode alone, so a library set to open on
+  // Albums drew Albums in the list and lit the Songs glyph above it for the whole
+  // session - the icon said one thing and the library said another. Where the mode is
+  // decided or changed by something that is not a glyph (boot, the tabs inside the
+  // library, the download landing), the rail page comes with it.
+  function scShelfPageForMode(mode){
+    return (String(mode || '') === 'albums') ? 'albums' : 'playlists';
+  }
+  function scShelfModeFollow(){
+    try{
+      if(typeof scShelf === 'undefined' || !scShelf) return false;
+      if(typeof libraryMode === 'undefined') return false;
+      var mode = String(libraryMode || '');
+      // A GLYPH TAP HAS ALREADY SAID WHICH PAGE IT IS. scShelfApply() records the mode
+      // that page means, so a page the owner chose with a glyph is never overruled here -
+      // this only moves the glyph when the mode changed underneath it.
+      if(String(scShelf.modeAt || '') === mode) return false;
+      scShelf.modeAt = mode;
+      scShelf.page = scShelfPageForMode(mode);
+      if(typeof scShelfMark === 'function') scShelfMark();
+      return true;
+    }catch(_eModeFollow){ return false; }
+  }
   // 81.5 - A DOCK PILL IS A DOOR, EVEN WHEN THE PAGE IS ALREADY DRAWN. The page the
   // shelf thinks it is on and the page the screen is showing are two different facts,
   // and the shelf only knew the first one: from Studio or Tools, where the library has
@@ -23059,6 +23084,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scStreamState.pl = '';
     try{
       if(typeof libraryMode !== 'undefined') libraryMode = (page === 'albums') ? 'albums' : 'playlists';
+      // THIS PAGE AND THIS MODE AGREE, so the follow below leaves the glyph exactly here.
+      scShelf.modeAt = (page === 'albums') ? 'albums' : 'playlists';
       if(typeof navigate === 'function') navigate('library');
     }catch(_eShelf){}
     if(scShelf.src === 's' && SC_STREAM_OK){
@@ -24208,7 +24235,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.10';
+  const APP_VERSION = '85.3.11';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24918,6 +24945,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.11', date: 'November 24, 2026', title: 'The library opens on the view you set, and the glyph above it says the same thing', items: [
+      'The library icon now follows the Default view setting: a library set to open on Albums opens on Albums with the Albums glyph lit, instead of lighting whichever page came first.',
+      'Switching between Songs, Playlists and Albums inside the library moves the lit glyph with the view, so the icon above the list never describes a different page.',
+      'A page picked with the glyph itself is never overruled by the setting afterwards.'
+    ] },
     { version: '85.3.10', date: 'November 24, 2026', title: 'A song the earbuds paused is a song the earbuds can start again', items: [
       'A pause from the earbuds now leaves the session, the wake lock and the background hold alive, exactly as a pause from the lock screen already did, so the next press from the buds has something to land on.',
       'A play press from a headset has its own branch in the app\u2019s key handler instead of falling through a catch-all, and it cancels the clock that would park the session before the song is started.',
@@ -50487,6 +50519,8 @@ function _fallbackCopy(text){
       if(_plH) _plH.classList.toggle('active-half', libraryMode === 'playlists');
       if(_alH) _alH.classList.toggle('active-half', libraryMode === 'albums');
       if(typeof applyLibraryButtonMode === 'function') applyLibraryButtonMode();
+      // 85.3.11 - and the rail's glyph follows the mode the library opened on.
+      try{ if(typeof scShelfModeFollow === 'function') scShelfModeFollow(); }catch(_eShelfFollow){}
       // The onboarding screen is for "you have not added music yet" — never for
       // "we could not read your music". A failed read keeps it hidden.
       $('emptyState').style.display = (allTracks.length || !scLibraryReadOk) ? 'none' : 'flex';
@@ -59989,6 +60023,9 @@ function _renderAhFromData(artistAlbums){
     try{
       libraryMode = 'playlists';
       reorderMode = false;
+      // 85.3.11 - All Songs is the Songs page, and the mode it means already agrees
+      // with it, so the rail's glyph lands on Songs rather than on the mode's name.
+      try{ scShelf.page = 'library'; scShelf.modeAt = 'playlists'; }catch(_eDlShelf){}
       // null = keep the playlist the caller already picked; no argument lands
       // on All Songs, the one list every saved track is guaranteed to be in.
       if(playlistName !== null) activePlaylist = playlistName || 'All Songs';

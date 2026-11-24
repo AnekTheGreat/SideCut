@@ -188,7 +188,7 @@ console.log('\n3. The release itself');
   ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
 }
 const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok('the page is on 85.3.10', vPage === '85.3.10', vPage);
+ok('the page is on 85.3.10 or newer', /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 10, vPage);
 ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
 ok('the notes carry the 85.3.10 entry', page.includes("version: '85.3.10'"));
 ok('the new entry is above 85.3.9', page.indexOf("version: '85.3.10'") < page.indexOf("version: '85.3.9'"));
