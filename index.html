@@ -20036,6 +20036,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_PERF_MS = 2500;                // the window a rate is measured over
   var SC_VQ_PERF_ROUNDS = 2;               // that many bad windows in a row before the picture steps back
   var SC_VQ_RATE_STEPS = 4;                // how many sizes the rate may give up for one film
+  var SC_VQ_FULL_SHARE = 0.5;              // a clip shorter than half the song is a teaser, not its video
   var SC_VQ_STREAM_MAX_AHEAD = 16 * 1048576; // the app's own buffer is a window, not a copy of a 4K film
   var SC_VFX_EDGE_H = 720;                 // at or above this height the frame already has its edges
   var SC_VFX_KEY = 'scVideoUpscale';       // HD+ is remembered, and is on unless said otherwise
@@ -20875,6 +20876,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           var sArt = '';
           try{ if(typeof scStreamThumb === 'function') sArt = String(scStreamThumb(st) || ''); }catch(_eStArt){ sArt = ''; }
           return { videoId: String(st.videoId || ''), title: String(st.title || ''), artist: String(st.artist || ''),
+                   album: String(st.album || ''), dur: Number(st.dur) || 0,
                    art: sArt, key: 's:' + String(st.id || '') };
         }
       }
@@ -20887,6 +20889,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
             var f = allTracks[i];
             var fArt = String(f.artUrl || f.art || f.cover || f.thumb || '') || domArt();
             return { videoId: String(f.videoId || ''), title: String(f.title || ''), artist: String(f.artist || ''),
+                     album: String(f.album || ''), dur: Number(f.duration) || 0,
                      art: fArt, key: 'q:' + String(id) };
           }
         }
@@ -21119,44 +21122,123 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }).catch(function(){ return null; });
   }
 
+  // WHAT A TITLE SAYS THE FILM IS. Bracket tags ("(Official Video)", "[4K]") and upload
+  // noise are stripped; what is left is the words that name the SONG. It is kept as a
+  // list of words so that a title is compared as whole words - "Song" is not "Song 2"
+  // - and so that "Artist - Song" and a title that is only "Song" both answer.
+  function scVideoTitleWords(s){
+    var t = String(s || '').toLowerCase();
+    try{ t = t.replace(/[\(\[]([^\)\]]*)[\)\]]/g, ' '); }catch(_eWords){}
+    t = t.replace(/\b(official|video|audio|lyric|lyrics|visualiz(?:er|or)|hd|hq|4k|1080p|720p|480p|360p|mv|explicit|clean|remaster(?:ed)?|topic)\b/g, ' ');
+    t = t.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return t ? t.split(' ') : [];
+  }
+  // Every word in a title, brackets and all. The album is often only named inside them
+  // - "(from the album Record)" - so the album credit reads this, not the stripped name.
+  function scVideoAllWords(s){
+    var t = String(s || '').toLowerCase();
+    t = t.replace(/\b(official|video|audio|lyric|lyrics|visualiz(?:er|or)|hd|hq|4k|1080p|720p|480p|360p|mv|explicit|clean|topic)\b/g, ' ');
+    t = t.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return t ? t.split(' ') : [];
+  }
+  function scVideoHasWords(have, want){
+    if(!want.length || want.length > have.length) return false;
+    for(var i = 0; i + want.length <= have.length; i++){
+      var hit = true;
+      for(var j = 0; j < want.length; j++){ if(have[i + j] !== want[j]){ hit = false; break; } }
+      if(hit) return true;
+    }
+    return false;
+  }
+  function scVideoWordsName(have, want){
+    if(!want.length || want.length > have.length) return false;
+    for(var i = 0; i + want.length <= have.length; i++){
+      var hit = true;
+      for(var j = 0; j < want.length; j++){ if(have[i + j] !== want[j]){ hit = false; break; } }
+      if(!hit) continue;
+      // THE NEXT WORD DECIDES between this song and a sequel: "Song 2" is a different
+      // track from "Song", and so are "Song, Pt. 2" and "Song Vol. 3". A run that ends
+      // the title, or that is followed by anything else, is this song.
+      var next = have[i + want.length];
+      if(!next || !/^\d+$|^(pt|part|vol|volume)$/.test(next)) return true;
+    }
+    return false;
+  }
+  function scVideoTitleNames(candTitle, songTitle){
+    var want = scVideoTitleWords(songTitle);
+    if(!want.length) return true;                 // nothing to check against: the ask stands
+    var raw = String(candTitle || '');
+    var parts = raw.split(/\s+[-\u2013\u2014]\s+/);
+    for(var p = 0; p < parts.length; p++){
+      if(scVideoWordsName(scVideoTitleWords(parts[p]), want)) return true;
+    }
+    return scVideoWordsName(scVideoTitleWords(raw), want);
+  }
+
   // A file has no video id, so the host is asked, and what comes back is put in
-  // the order the SONG agrees with: length first, credit second, and anything
-  // that advertises itself as a different take demoted.
+  // the order the SONG agrees with: the title has to name this track, the length
+  // has to be this recording's, credit comes third, and anything that advertises
+  // itself as a different take is demoted.
   function scVideoRank(list, t){
     var songDur = 0;
     try{ var a = scVideoAudioEl(); songDur = a && isFinite(a.duration) ? (Number(a.duration) || 0) : 0; }catch(_eSd){ songDur = 0; }
+    if(!(songDur > 0) && t) songDur = Number(t.duration) || Number(t.dur) || 0;
+    var want = scVideoTitleWords((t && t.title) || '');
+    var albumWords = scVideoTitleWords((t && t.album) || '');
     var otherTake = /\blive\b|cover|karaoke|remix|sped\s*up|slowed|nightcore|\b8d\b|instrumental|reaction|tutorial|lesson|behind the scenes|teaser|trailer/i;
     var artist = String((t && t.artist) || '').toLowerCase().split(/\s*(?:,|&|\bfeat\b|\bft\b|\bx\b)\s*/)[0].trim();
     var rows = (list || []).map(function(c, i){
       var s = -i * 2;                                  // the host's own ranking is the floor
       var dur = Number(c.duration) || 0;
+      var diff = (songDur > 0 && dur > 0) ? Math.abs(dur - songDur) : 0;
       if(songDur > 0 && dur > 0){
-        var diff = Math.abs(dur - songDur);
         if(diff <= 6) s += 16;
         else if(diff <= 15) s += 7;
         else if(diff > Math.max(25, songDur * 0.12)) s -= 26;   // a different recording
         else s -= 4;
       }
+      // IS THIS THE SONG, OR JUST THE ARTIST? A title that does not name this track is
+      // not this song's video however well its length matches and whoever uploaded it:
+      // being on the artist's own channel earns nothing for a different song. That is
+      // the report - "some random other video by the same artist" - in one line.
+      var named = scVideoTitleNames(c.title, (t && t.title) || '');
+      var wrong = !!want.length && !named;
+      // THE WHOLE FILM, NOT A TEASER. A clip that runs well short of the song is a promo,
+      // a short or the intro cut up - it is not the video this song has.
+      var clip = !!(songDur > 0 && dur > 0 && dur < songDur * SC_VQ_FULL_SHARE);
       if(otherTake.test(String(c.title || ''))) s -= 14;
       var owner = String(c.owner || '').toLowerCase();
       if(artist && owner && owner.indexOf(artist) !== -1) s += 9;
       if(/\btopic\b|\bvevo\b/.test(owner)) s += 5;
-      return { c: c, s: s, i: i, dur: dur, far: !!(songDur > 0 && dur > 0 && Math.abs(dur - songDur) > Math.max(25, songDur * 0.12)) };
+      // THE ALBUM THE SONG IS IN. The record's own cut is the one asked for, and naming
+      // it beats a same-titled single, a radio edit or another record's upload.
+      if(albumWords.length && scVideoHasWords(scVideoAllWords(c.title), albumWords)) s += 6;
+      return { c: c, s: s, i: i, dur: dur, wrong: wrong, clip: clip,
+               far: !!(songDur > 0 && dur > 0 && diff > Math.max(25, songDur * 0.12)) };
     });
     rows.sort(function(x, y){ return (y.s - x.s) || (x.i - y.i); });
-    var kept = rows.filter(function(r){ return !r.far; });
-    var use = kept.length ? kept : rows;
+    // A DIFFERENT SONG IS NEVER THE ANSWER, and a clip of this one is not it either: the
+    // cover and one honest line beat a stranger's film or a thirty-second teaser. What a
+    // candidate needs is the track's own name on it, the recording's own length, and a
+    // full-length upload; being on the artist's channel is a tiebreak, not a pass.
+    var namedRows = want.length ? rows.filter(function(r){ return !r.wrong; }) : rows;
+    var fullRows = namedRows.filter(function(r){ return !r.clip; });
+    var kept = fullRows.filter(function(r){ return !r.far; });
+    var use = kept.length ? kept : fullRows;
     return use.map(function(r){ return r.c; });
   }
 
+  // THE SONG, ITS ALBUM, AND NOTHING ELSE. The album is handed to the search as the
+  // album the song is in, so the record's own cut is what the result list is ordered
+  // around, and what comes back is gated by the track's name before it is offered.
   function scVideoSearch(t){
     var q = (String((t && t.artist) || '') + ' ' + String((t && t.title) || '')).trim();
     if(!q) return Promise.resolve([]);
     try{
-      return Promise.resolve(scYtSearch(q, (t && t.artist) || '', ''))
+      return Promise.resolve(scYtSearch(q, (t && t.artist) || '', (t && t.album) || ''))
         .then(function(cands){
           if(!cands || !cands.length) return [];
-          var picked = scVideoRank(cands.slice(0, 8), t);
+          var picked = scVideoRank(cands.slice(0, 12), t);
           return picked.slice(0, 6).map(function(c){
             return { videoId: String(c.videoId || ''), title: String(c.title || ''), owner: String(c.owner || '') };
           }).filter(function(c){ return !!c.videoId && c.videoId.indexOf('ia:') !== 0; });
@@ -22905,12 +22987,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(!cands.length){
         // NOTHING WAS FOUND, SO THE COVER IS THE PICTURE. A file has no video id, and
         // a song without a video is a song, not a broken tab.
-        return scVideoNoVideo(t, 'No music video for this song.');
+        return scVideoNoVideo(t, 'No video of this song was found.');
       }
       scVideoState.cands = cands;
       scVideoState.ci = 0;
       if(other) other.style.display = (cands.length > 1 ? '' : 'none');
-      scVideoFoot('Matched by length \u00b7 ' + cands.length + ' result' + (cands.length === 1 ? '' : 's') + (cands.length > 1 ? ' \u00b7 NEXT for another' : ''));
+      scVideoFoot('Matched to this song \u00b7 ' + cands.length + ' result' + (cands.length === 1 ? '' : 's') + (cands.length > 1 ? ' \u00b7 NEXT for another' : ''));
       return scVideoLoad(cands[0]);
     });
   }
@@ -24275,7 +24357,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.13';
+  const APP_VERSION = '85.3.14';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -24985,6 +25067,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.14', date: 'November 24, 2026', title: 'The film is this song, all of it: the title has to name the track, and a teaser is not the video', items: [
+      'The music video tab now plays the video of the song that is on, not another song by the same artist: a result whose title does not name this track is never offered, however well its length matches.',
+      'A clip that runs well short of the song - a teaser, a short, a cut of the intro - is no longer the film: the tab opens a full-length upload, or shows the cover and says it found none.',
+      'The search is told which album the song is on, so the album cut is what the result list is ordered around.'
+    ] },
     { version: '85.3.13', date: 'November 24, 2026', title: 'A size that cannot keep up steps back until one does, and the walk ends when a smaller one is slower', items: [
       'A picture this phone cannot keep up with now steps down to a size it can, instead of staying on the one showing a few frames a second.',
       'The step back stops the moment a smaller size shows fewer frames than the one above it, so a phone that is slow everywhere is not reloaded down the whole list.',

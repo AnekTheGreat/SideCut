@@ -1,5 +1,85 @@
 # SideCut — repository memory
 
+## 85.3.14 (November 24, 2026): the film is this song, all of it - the title has to name the track, and a teaser is not the video
+
+**The owner's report**: "it has to display the whole video and the correct fucking video with
+the song that I'm on not some random ahh other video by the same artist go in order of the
+album or playlist its in". Two faults in one sentence, and both were in `scVideoRank` - the
+function that puts the search results in order. It scored a candidate on how close its
+LENGTH was to the song and how much its channel looked like the artist, and it never asked
+the one question that decides the film: does this title name this track? A different song by
+the same artist, of a similar length, on the artist's own channel therefore outranked the
+song's own upload - which is exactly the report. And nothing in the list treated a teaser or
+a short as anything but a candidate, because a forty-second clip of the right song is still
+"the right song" to a length comparison.
+
+**A TITLE THAT DOES NOT NAME THE TRACK IS NOT THIS SONG'S VIDEO.** New `scVideoTitleWords`
+strips bracket tags and upload noise and keeps the words; `scVideoWordsName` looks for the
+song's words as a run inside the title, and refuses a run that is followed by a number or a
+part marker - "Song 2" and "Song, Pt. 2" are different tracks from "Song". A title is read
+in the shapes uploads really use: split on a spaced dash (`Artist - Song`, `Artist – Song`),
+the whole title, and the same for every part, so `Artist - Song - Record` and
+`Artist - Song (Official Video) [4K]` both answer. A candidate whose title does not name the
+track is **dropped**, not demoted: it is never offered, and if nothing names the track the
+tab shows the cover with "No video of this song was found." rather than a stranger's film.
+
+**A CLIP IS NOT THE FILM.** `SC_VQ_FULL_SHARE` (0.5) drops a candidate whose length is under
+half the song's - a teaser, a short, a cut of the intro - because the ask is the whole video,
+not part of it. `scVideoRank` also reads the length from the track now (`scVideoSongLen`
+falls back to the row's own duration), so the gate works before the deck element has
+metadata. A candidate that runs further PAST the song than 25 s or 12% is still a different
+recording and still loses - unless nothing nearer names the song, which is the rule that was
+already there.
+
+**AND THE ALBUM IS THE ORDER.** `scVideoTrack` now carries the album and the length of the
+row it is on, and `scVideoSearch` hands the album to `scYtSearch` as its album hint, so the
+record's own cut is what the result list is ordered around. Within the gated list, a title
+that names the album earns +6 - read by `scVideoAllWords`, which keeps bracket content,
+because that is where an upload usually says which album it is from ("(from the album
+Record)"). `scVideoSearch` ranks twelve results instead of eight before it offers six.
+
+**"THE WHOLE VIDEO" WAS READ AS THE FULL-LENGTH UPLOAD**, not as a change to where the film
+starts: `scVideoAttach` still seats the picture on the song's own second, on purpose, so the
+frame matches what is being heard. If the report meant the frame is cropped, or that the film
+should always open at 0:00, that is a different change and is not in this release.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85314.cjs` passes **38 assertions, 0 failed** - `scVideoRank` and
+its four title helpers cut out of `index.html` by name and braces and run in a vm against
+fake results. The ones this release is about: a different song by the same artist, of the
+same length, on the artist's own channel, does not take the screen from the song's own
+upload and is not played when it is all the search returned; a channel name is not an
+identity; a live take of THIS song is still this song, only demoted; seven real upload title
+shapes all name the song; "Song 2" is not "Song" and "Song" is not "Song 2"; a title of
+nothing but tags matches nothing; a forty-second teaser and a clip of half the song are not
+the video, and the full upload wins whether it comes first or second on the list; a film far
+from the song is used only when nothing nearer names it; with no known song length a short
+clip is not guessed at; the album cut is preferred when the title carries the album and the
+list order is kept when no album is named; the search carries the album, the track carries
+its album and length, and twelve results are ranked; a wrong title, a teaser and a different
+recording are each filtered out of the list rather than played. All 10 inline scripts parse,
+the page and the shell cache are 85.3.14, and the notes entry is above 85.3.13 and carries no
+word the Play channel filters. The 85.3.13 (**37**), 85.3.12 (**33**), 85.3.11 (**22**),
+85.3.10 (**32**), 85.3.9 (**46**, its `scVideoRank` assertions still pass under the new
+gate), 85.3.8 (**57**), 85.3.7 (**66**) and 85.3.6 (**74**) sets still pass. Both OTA
+channels rebuilt to a fixed point and verify with `--check`.
+
+Not checked: **no phone and no search call.** Nothing was watched, and the search was not run
+from this sandbox for the songs in the report, so what is proven is which candidates the rank
+keeps and in what order - not that the right upload is in the result list for a particular
+song. The strictness has a cost: a song whose only upload is titled in a way this matcher
+does not read (a translated title, an upload that names none of the track's words) now shows
+the cover and says no video was found, where it used to show the nearest same-artist clip.
+That is the trade this release makes on purpose - a wrong film is worse than an honest line -
+and the line names the song's own cover. A video that is legitimately a short edit of a long
+album cut (under half the track's length) is declined for the same reason. `NEXT` still walks
+the gated list and can still be used when the first result is not the cut wanted.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1331346 bytes**, `ota-play/updates.json` **1331360 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.13 (November 24, 2026): a size the phone cannot keep up with is given up again, and the walk ends when a smaller one is slower
 
 **The owner's report**: "now the music videos don't work". One release after the rate was
