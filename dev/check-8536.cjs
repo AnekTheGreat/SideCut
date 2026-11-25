@@ -210,12 +210,15 @@ function transportRun(opts) {
     pause() { this.paused = true; }
   };
   const state = { open: opts.open !== false, bg: opts.bg || null, audioMode: opts.audioMode || 'aux', blocked: true };
-  const calls = { hold: 0, attempt: 0, aux: 0, big: [] };
+  const calls = { hold: 0, attempt: 0, aux: 0, big: [], pos: 0 };
   const sb = {
     console, Number, Math, String, Object, Array, Promise,
     scVideoState: state,
     scVideoEl() { return film; },
     scVideoAuxPause() { calls.aux++; },
+    // 85.3.18 - the press now writes the second down and latches the pause; this harness
+    // is about which door a press goes through, so the store is a counter here.
+    scVideoPosSave() { calls.pos++; },
     scVideoHoldSong() { calls.hold++; },
     scVideoPlayAttempt() { calls.attempt++; film.paused = false; },
     scVideoBig(v) { calls.big.push(!!v); },
@@ -230,6 +233,9 @@ function transportRun(opts) {
   ok('and the song is held underneath it', r.calls.hold === 1);
   const r2 = transportRun({ paused: false });
   ok('pause on a running film stops it', r2.U.scVideoTransport('pause') === true && r2.film.paused === true);
+  // 85.3.18 - AND THE PAUSE IS A PAUSE: latched, with the second written down.
+  ok('a press from outside latches the pause and keeps the second',
+    r2.state.hold === true && r2.calls.pos === 1, r2.state.hold + '/' + r2.calls.pos);
   const r3 = transportRun({ paused: false });
   ok('the toggle pauses a running film', r3.U.scVideoTransport('toggle') === true && r3.film.paused === true);
   const r4 = transportRun({ paused: true });

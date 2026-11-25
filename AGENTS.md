@@ -1,5 +1,166 @@
 # SideCut — repository memory
 
+## 85.3.18 (November 25, 2026): the film opens on its own second, it remembers where it was left, and a pause is a pause
+
+**The owner's report**: "if you stop a mv, and exit it should resume automatically from the
+place you stopped if you enter the same mv again, also it should be the full friken length
+of the video not 1 minute when I pause the music video it should pause not resume
+automatically". Three symptoms, two causes, and both were in the clock the tab never kept.
+
+**THE PICTURE WAS SEATED ON THE SONG'S CLOCK IN EVERY MODE.** `scVideoAttach` opened on
+`scVideoSongTime()` whenever it had no other position, on purpose since 85.3.4 so the frame
+matched what was being heard. On a music video longer than the song - or a song that sits
+three minutes into a long upload - that is the film's last minute and no more: a four-minute
+video opened at 3:00 and ended at 4:00. That is "not 1 minute" word for word. A size that
+carries its own sound (the picture in a muxed row, or the paired track of a sharp one) is a
+film in its own right now: it opens on `scVideoState.filmAt` - the second it was left on, or
+0:00 - and plays to its own end. Where the SONG is the soundtrack (a size with no audio row
+at all) the picture still follows the song's clock, because there the sound and the frames
+are one recording and opening the picture at 0:00 would play the wrong part of the song.
+A codec fallback now carries the second the picture had reached (`scVideoFailed`), because
+the attach behind it carries no position of its own and would otherwise replay from the top.
+
+**NOTHING ANYWHERE WROTE DOWN WHERE THE FILM HAD GOT TO.** New `scVideoPos*`:
+`localStorage['sidecut_videoPos']` is a map of song key -> `{ at, ts }`, written on the way
+out of the tab, on a pause, from the tick every `SC_VIDEO_POS_EVERY` (5 s) while it plays,
+and on the background hand-off; read by `scVideoLoad` into `filmAt`; capped at
+`SC_VIDEO_POS_MAX` (60) songs, oldest dropped. Entering the tab again opens on that second
+and plays (`scVideoLoad` clears `hold`). A film that reached its end forgets its second, so
+the whole thing plays next time; a pause at 0:00 does not throw the record away; a stored
+second past the end of a shorter upload of the same song is refused at `loadedmetadata`
+rather than parking the picture on the last frame.
+
+**A PAUSED FILM COULD BE STARTED BY SOMETHING ELSE.** `scVideoSync` exists to keep the
+picture and its sound on one second, and two of its paths play the film: the paired track's
+nudge, and the song's own clock where the song is the soundtrack (`else if(v.paused &&
+!blocked) scVideoPlayAttempt()`). The round button paused the picture, and whatever started
+the song underneath it - the app's own recovery included - started the picture again one
+tick later. New `scVideoState.hold`: set by both pause doors (`scVideoTap`,
+`scVideoTransport`), cleared by both play doors, by `scVideoLoad` and by a finished film.
+The tick reads it first and, instead of following the song, keeps the picture and the voice
+stopped and the song quiet; `scVideoBackgroundIn` also leaves a held film paused. The old
+contract stands where it is legitimate - a film that was never paused still follows the
+song, and a queue change still loads the new song's film.
+
+**AND THE SONG IS PARKED, NOT MOVED.** `scVideoClose` used to seat the song on the
+picture's second. With the film opening at the top instead of on the song's clock, that
+would rewind the song on the way out by however far apart the two were, so
+`scVideoParkSong(at, keepSecond)` keeps it where it was held whenever the film owned the
+sound, and still seats it on the picture's second where the song was the soundtrack (the
+two clocks are one there).
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85318.cjs` passes **66 assertions, 0 failed** - every function cut
+out of `index.html` by name and braces and run in a vm against a fake picture, a fake song,
+a fake voice track, a fake store and recorders. The ones this release is about: a second is
+written down per song and read back, another song does not read it, a stop at the top
+clears it, the store is capped at 60 and drops the oldest, a corrupt store reads as empty
+and is replaced, a store that throws does not throw here; the tick writes while the picture
+runs, not twice inside five seconds, not for a paused film and not for a held one; a film
+with no remembered second opens at **0** (not the song's 5:00), a remembered one opens on
+it and marks itself seeded, a size with its own sound does the same, a song-soundtrack size
+stays on the song's second, and a size change keeps the picture's own second instead; both
+pause doors latch the pause and write the second down, both play doors let go of it, a
+pause before anything has played keeps the record; the tick does not start a held film
+while the song plays (and quiets the song), still starts one that was never paused, and
+still writes a running film's second; the song is left on its own second where the film had
+the sound and seated on the picture's second where it did not; the close writes before it
+clears and does not forget a record for an empty tab; the load seeds `filmAt` and clears
+`hold`; the hand-back comes before the play attempt; a finished film latches and clears;
+a seeded second past a shorter upload's end is refused. All 10 inline scripts parse, the
+page and the shell cache are 85.3.18, and the notes entry is above 85.3.17 and carries no
+word the Play channel filters. The 85.3.17 (**45**), 85.3.16 (**60**), 85.3.15 (**63**),
+85.3.14 (**38**), 85.3.13 (**37**), 85.3.12 (**33**), 85.3.11 (**22**), 85.3.10 (**32**),
+85.3.9 (**46**), 85.3.8 (**57**), 85.3.7 (**66**), 85.3.6 (**75**, with a stub for the new
+position writer and one assertion of this release added to its transport harness), the
+85.3.4 (**243**), 85.3.3 (**235**), 85.3.2 (**213**) and 85.3.0 (**204**) sets still pass;
+85.3.17's version assertion was relaxed to "85.3.17 or newer" with a note in the file. Both
+OTA channels rebuilt to a fixed point (`1341693 -> 1341714 -> 1341714`) and verify with
+`--check`.
+
+Not checked: **no phone, no film watched.** Nothing was played from this sandbox, so what is
+proven is which second the picture opens on, what is written down and when, and which paths
+may start it - not that a particular video resumes on a particular phone. The "1 minute" in
+the report is read as "the last minute of a longer film", which is the only reading this
+code can produce; if the tab also stops a film early on a device, that is a buffer or source
+problem and is not what this release changed. A size with no audio row at all still follows
+the song's clock and so still opens mid-film, because there the song is the sound - the
+search prefers sizes that carry sound, so that is the fallback rather than the normal case.
+The remembered second is per song, not per upload: a `NEXT` upload with a different edit
+resumes on the same second, which is right for the same film and a second or two off for a
+different cut. Nothing about the background hand-off's audio continuity changed.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1341714 bytes**, `ota-play/updates.json` **1341726 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
+## 85.3.17 (November 25, 2026): the side rail is drawn as one set, and the page you are on wears the theme
+
+**The owner's follow-up**: "what I meant by clean up the side tab bar was make it look nicer
+and cleaner". 85.3.16 read the same sentence as an instruction about the rail's STRUCTURE
+(one hairline for the tools, the three dots on it) and left its paint exactly as it was, so
+four details were still working against "cleaner" - and one of them was a plain bug.
+
+**THE PAGE YOU WERE ON WAS A WHITE DISC.** The mark rule asked for
+`background:var(--accent, var(--ink))` and `color:var(--bg)`. `--accent` is not defined
+anywhere in this app - `applyTheme()` writes `--coral`, `--gold` and `--on-coral` - so every
+theme got the ink fallback: a white circle with the page background on it, in the one place
+the app's own accent should be. The mark is now `background:var(--coral)` with
+`color:var(--on-coral)`, the same pair the play button and the logo use, so the rail follows
+the theme (and a light accent theme gets readable text on it, which `color:var(--bg)` was
+not promising).
+
+**ONE RHYTHM, AND TWO SHORT RULES INSTEAD OF A HEAVY EDGE.** The rail's gap was 5px both
+inside a group and between two groups, so six glyphs read as six separate things; it is 3px
+inside a group and a 4px-inset rule between them now, with 6px of rail around the outside.
+The glyphs stay 34px. The border is `color-mix(in srgb, var(--ink) 11%, transparent)` with
+one light inset line along the top edge, and the 26px drop shadow is 8px/22px, so the pill
+is seated on the songs instead of smudged across them. The rail also keeps clear of a
+curved screen's edge: `right:calc(9px + env(safe-area-inset-right, 0px))`.
+
+**THE SWITCH DREW A DOT ON ITS OWN ICON.** The on-state was a 5px coral dot in the glyph's
+corner, over the glyph it was describing. It is a hairline accent ring
+(`inset 0 0 0 1px` at 42% coral) around the glyph now. A glyph that is not the page you are
+on also answers a press with a 9% ink wash (and a 6% one on hover where a pointer exists),
+so the rail feels touched rather than only jumping; the scale press, the lift, the drag
+cursor and the reduced-motion rule are exactly as they were.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85317.cjs` passes **45 assertions, 0 failed** - the style block
+`scShelfCss()` builds is cut out of `index.html` and read as text, and the strings this
+release is about are asserted one at a time: one gap value and one glyph size; the 6px
+rail and the safe-area inset; the mixed-ink hairline and the smaller shadow with its top
+line; the mark on `--coral`/`--on-coral` and no rule reading `var(--accent)`; the press
+wash and a hover tint that exists only under `(hover:hover)` and never on the marked page
+or an engaged switch; the short inset divider; the switch's ring and the dot's absence; and
+that nothing the rail could already do was taken away (lift, `touch-action:none`, drag
+cursor, reduced motion, the one-time stylesheet, the two groups, the dots still opening the
+song actions and keeping their own class, the mark still writing classes and never a node).
+The release facts too: 10 inline scripts parse, the page and the shell cache are 85.3.17,
+the notes entry is above 85.3.16 and carries no word the Play channel filters. The 85.3.16
+set still passes **60, 0 failed** - with its one version assertion rewritten to "85.3.16 or
+newer", with a note in the file, because this release kept every behaviour it proves. Both
+OTA channels rebuilt to a fixed point (`1338690 -> 1338687 -> 1338687`) and verify with
+`--check`. Looked at, not just asserted: the real page was driven in the cloud browser at
+412x915, the rail drawn at 2.6x over a flat backdrop to judge the mark, the divider and the
+switch's ring, and the live rail photographed on the library screen.
+
+Not checked: **no phone.** What is proven is the stylesheet's own strings, the computed
+colours in a Chromium build of the same page (the mark resolves to the theme's coral with
+`--on-coral` except on the RGB themes, which keep the last readable pair), and how it looks
+in that browser - not how a particular WebView, theme or wallpaper behind the rail reads.
+A theme whose accent is very close to its background will make the marked disc softer than
+the flat white one it replaced; that is the trade this release makes on purpose, and Tools'
+see-through slider is the lever if the rail and the songs under it are too close. The store
+build's own rail (three pages and the dots, no switch) was not driven separately: the rules
+it shares are the ones asserted here, and nothing in this release is gated on the build.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1338687 bytes**, `ota-play/updates.json` **1338702 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.16 (November 25, 2026): the canvas waits for a frame, a picked size is the size that plays, the film is in the song menu, and the rail has the three dots
 
 **The owner's report**: "video quality upscaling and downscaling doesn't work fix that. if

@@ -372,7 +372,10 @@ function releaseChecks() {
   }
   ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on 85.3.16', vPage === '85.3.16', vPage);
+  // 85.3.17 - rewritten for this release's contract: this suite proves 85.3.16's
+  // behaviour, which 85.3.17 kept (it only redrew the rail), so it asks for 85.3.16
+  // or newer instead of pinning the page to it.
+  ok('the page is on 85.3.16 or newer', /^85\.3\.(1[6-9]|[2-9]\d)$/.test(vPage || ''), vPage);
   ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
   ok('the notes carry the 85.3.16 entry', page.includes("version: '85.3.16'"));
   ok('the new entry is above 85.3.15', page.indexOf("version: '85.3.16'") < page.indexOf("version: '85.3.15'"));
