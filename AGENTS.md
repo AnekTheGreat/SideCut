@@ -1,5 +1,96 @@
 # SideCut — repository memory
 
+## 85.3.16 (November 25, 2026): the canvas waits for a frame, a picked size is the size that plays, the film is in the song menu, and the rail has the three dots
+
+**The owner's report**: "video quality upscaling and downscaling doesn't work fix that. if
+it's legal add the music video to regular SideCut and make the side tab thing better and
+cleaner allowing you to do the 3 dots too". Three faults, and the first two are one fault
+seen from two sides.
+
+**THE UPSCALER COVERED THE STAGE WITH A CANVAS THAT HAD NOTHING IN IT.** `scVideoFxApply`
+added `sc-vfx` - the class that hides the `<video>` - the moment the switch was on. But the
+canvas is only ever painted from the frame loop, and `scVideoFxFrame` refuses a paused
+picture. So a film that was paused, or one that had just been given a new size and was
+waiting to be started, had the element hidden behind a blank canvas: HD+ "did nothing" while
+the picture played and wiped the picture out while it did not. And the canvas was built
+TWICE - the stage's own markup has `<canvas id="scVideoFx">`, and `scVideoFxCanvas` created a
+second one, gave it the same id and appended it, so the node the app drew into was not the
+node `getElementById` answered with, and the stage carried two full-size composited layers.
+Now the canvas the markup has is the one that is adopted and painted; one is only made where
+a stage has none. The class is added only once a frame has actually landed
+(`scVideoState.fxPainted`), the first frame is taken on the spot when the element already has
+one, and a paused film, a seek and a loaded frame each paint once (`scVideoFxPaintOnce`)
+instead of falling back to the last frame of the size that was left. A new source starts with
+no frame of its own, so the element shows the new picture until the canvas holds it.
+
+**AND A SIZE PICKED BY HAND WAS FILTERED THROUGH THE AUTOMATIC LADDER.** `scVideoQualityChoose`
+asked `scVideoPick`, which starts from `scVideoLive` - the ladder with every height this film
+already failed taken out. Tapping a height that had been marked dead therefore played a
+DIFFERENT size and the footer blamed the source; and the height kept its marks (`deadH`,
+`slowH`, `rescueH`, the reader's one-attempt bookkeeping, the rate's spent steps), so all the
+machinery around it had already given up on it. Tapping the size the chip already said was a
+no-op even when the stage was black. New `scVideoChooseFresh(h)` clears that film's marks for
+the height, resets the rate walk, and `scVideoPick(rungs, want, exact)` reads the whole ladder
+for a hand pick, so the size that is tapped is the size that is asked for. A refused range ask
+during a pick no longer writes into `deadH` either: it is a verdict about one request, not
+about the size (the load path stopped marking for it in 85.3.8; this path now does too). The
+same height is still a request to see the picture: with a black stage it is attached again,
+with a picture already up it only marks.
+
+**THE FILM IS IN THE SONG MENU.** The music video was reachable only from the video glyph on
+the rail - the one place nobody looks for "play this song's video". It is now a row in the
+song's own three dots, beside Lyrics and Edit song info, and it opens the film of the song
+the dots were opened on: a row that is not playing starts that row's song first, because the
+tab follows the song that is on. It is built only where the tab exists - the store build has
+no video tab and no player that can reach a video-host stream, so there is no row to offer
+there, and nothing about the store build changed.
+
+**AND THE RAIL HAS THE THREE DOTS.** The rail is where a page is changed from, and a song's
+actions were only on its row or on the now bar. A ⋮ glyph under the video glyph opens the very
+sheet `openSongActions` builds, for the song that is on - one menu, three doors - and a song
+from the source (which has no library row) says so instead of opening an empty sheet. The rail
+is tidier with it: one hairline separates the tools from the pages instead of one each for the
+video glyph and the source, every glyph is 34px on a 5px rhythm, and the dots are not a page,
+so `scShelfMark` leaves their class alone. Drag-reorder and the stored order are untouched.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85316.cjs` passes **60 assertions, 0 failed** - the functions cut out
+of `index.html` by name and braces and run in a vm against a fake stage, a fake preference
+store and a fake element. The ones this release is about: the canvas the stage already has is
+the one painted and no second canvas is made; a stage with none gets exactly one, with the id
+the stylesheet targets; a picture with no data is never covered and the switch does not claim
+it is on; a frame the player already has is taken on the spot and only then does the canvas
+take the picture over; one frame for a still is refused until the element has data (readyState
+and videoWidth); turning HD+ on while the film is paused paints the frame it is on, keeps the
+choice and says so; turning it off gives the picture straight back. A height marked dead is
+skipped by the automatic ladder (**the fault**, asserted so it cannot come back unnoticed) and
+is the exact answer to a hand pick; the height stops being marked dead, given up for the rate
+and remembered as unreadable; the rate walk starts again; the exact size is applied rather
+than a smaller one; a pick on a black stage attaches again and one on a picture that is up only
+marks; a refused ask no longer dims the list. The song menu builds the music video row with the
+play-build guard above it, before Edit song info, and a video asked for from another row
+starts that row's song while the song already on is not restarted. The rail's dots open the
+actions of the song that is on, and a source song or nothing playing gets a line instead of an
+empty sheet; the rail is three groups (two dividers, not three), one glyph size, and the dots
+are skipped by the mark. All 10 inline scripts parse, the page and the shell cache are
+85.3.16, and the notes entry is above 85.3.15 and carries no word the Play channel filters.
+The 85.3.15 (**63**), 85.3.14 (**38**), 85.3.13 (**37**), 85.3.12 (**33**), 85.3.11 (**22**),
+85.3.10 (**32**), 85.3.9 (**46**), 85.3.8 (**57**), 85.3.7 (**66**) and 85.3.6 (**74**) sets
+still pass; 85.3.15's version assertion and 85.3.7's two hand-pick assertions were rewritten
+for this release's contract, with a note in each file saying so. Both OTA channels rebuilt to
+a fixed point and verify with `--check`.
+
+Not checked: **no phone, no film watched.** What is proven is when the canvas may cover the
+picture, what a tap on a size asks for, and which sheet the dots open - not that a given
+phone's WebView paints the sharpen at its frame rate, nor that a particular size that was
+marked dead earlier now plays on this device (it is asked for again, which is all the code
+can promise). Whether the canvas is cheaper or dearer than the element underneath on a
+specific GPU is still unmeasured. `typeof screen.orientation` behaviour, the store build's own
+AAB and the Play channel's filtering are untouched by this release. The video row's legality
+is the same question the tab has always answered: it plays video-host streams, it is not in
+the store build, and this release does not add it there.
+
 ## 85.3.15 (November 25, 2026): the recording is the clock for every lyric, on every song, and a model may not rewrite the words
 
 **The owner's report**: "why is the lyrics only displaying by character and length it should

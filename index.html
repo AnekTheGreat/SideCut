@@ -19655,7 +19655,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       device: 'M11 3h2v8.6l3.3-3.3 1.4 1.4L12 15.4 6.3 9.7l1.4-1.4L11 11.6V3zM5 19h14v2H5z',
       // 85.0.0 - the video glyph: a camera body with its lens wedge, so the
       // fourth tab is a moving picture and not the play triangle it borrows.
-      video: 'M4 6h10.5a1 1 0 0 1 1 1v2.6l4.5-2.8v10.4l-4.5-2.8V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z'
+      video: 'M4 6h10.5a1 1 0 0 1 1 1v2.6l4.5-2.8v10.4l-4.5-2.8V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z',
+      // 85.3.16 - the rail's three dots: the song's own actions, on the side of the
+      // screen the rail lives on, so the kebab is reachable without hunting for the row.
+      dots: 'M12 5.4a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm0 4.9a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm0 4.9a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z'
     }[name] || '';
     var s = Number(size) || 15;
     return '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false" ' +
@@ -19842,7 +19845,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // pills spent a band of the screen on three words and pushed the list down to
       // pay for it. The rail is fixed, so it costs the page no room at all: the shelf
       // and the list keep the scroll and the inset they already had.
-      '#scShelfRail.scShelfRailOn{display:flex;flex-direction:column;gap:6px;height:auto;',
+      '#scShelfRail.scShelfRailOn{display:flex;flex-direction:column;gap:5px;height:auto;',
       'position:fixed;right:8px;top:50%;margin:0;padding:5px;z-index:70;',
       'transform:translateY(-50%);border-radius:999px;pointer-events:none;',
       // 80.6.25 - NO BLUR BEHIND A FIXED PILL. A fixed layer with a
@@ -19859,7 +19862,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Only the glyphs catch a tap: the gaps between them and the rail's own padding
       // pass the touch through to the song underneath, which is the row the owner is
       // reaching for nine times out of ten.
-      '#scShelfRail .scshelf-tab{pointer-events:auto;width:32px;height:32px;flex:0 0 auto;',
+      '#scShelfRail .scshelf-tab{pointer-events:auto;width:34px;height:34px;flex:0 0 auto;',
       'display:grid;place-items:center;padding:0;border:0;border-radius:999px;background:none;',
       'color:var(--ink-dim);line-height:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation;',
       'transition:background .22s cubic-bezier(.22,.61,.36,1),color .22s cubic-bezier(.22,.61,.36,1),',
@@ -19994,6 +19997,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
     }, true);
   }
+  // 85.3.16 - THE SONG'S THREE DOTS, ON THE RAIL. Same sheet, same song as the row's kebab:
+  // the one that is playing. A song from the source has no library row to act on, and says
+  // so rather than opening an empty sheet.
+  function scShelfDots(){
+    var id = '';
+    try{
+      if(typeof queue !== 'undefined' && typeof queueIndex !== 'undefined' && queueIndex >= 0 && queueIndex < queue.length) id = String(queue[queueIndex] || '');
+    }catch(_eDotsQ){ id = ''; }
+    var has = false;
+    try{ has = !!id && typeof allTracks !== 'undefined' && allTracks.some(function(t){ return t && String(t.id) === id; }); }catch(_eDotsT){ has = false; }
+    if(!has){
+      try{ if(typeof window.toast === 'function') window.toast('Play a song from your library to use its actions'); }catch(_eDotsToast){}
+      return false;
+    }
+    try{ openSongActions(id); }catch(_eDotsOpen){ return false; }
+    return true;
+  }
   function scShelfRender(){
     // 80.6.31 - THE RAIL IS NOT A STREAMING FEATURE. The three page glyphs are the
     // library's own pages - Songs, Playlists, Albums - and gating them on the source
@@ -20039,12 +20059,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // library pages and above the source switch, it never changes the source,
       // and it is built only where a video can actually play: the Play build has
       // no source and no video path, so it gets no fourth glyph at all.
+      // 85.3.16 - ONE HAIRLINE FOR THE TOOLS. The video glyph had a rule of its own and the
+      // source switch another, so a rail of five glyphs read as four groups. The rail is
+      // three: the pages, the tools that work on the song, and the source.
+      h += '<div class="scshelf-sep"></div>';
       if(typeof SC_IS_PLAY === 'undefined' || !SC_IS_PLAY){
-        h += '<div class="scshelf-sep"></div>';
         h += '<button type="button" class="scshelf-tab" data-video="1"' +
           ' aria-pressed="false" aria-label="Music video" title="Music video">' +
           scIcon('video', 17) + '</button>';
       }
+      // 85.3.16 - THE THREE DOTS ARE ON THE RAIL TOO. The rail is where a page is changed
+      // from, and a song's actions were only on its row or on the now bar. This opens the
+      // very sheet openSongActions builds, for the song that is on - one menu, three doors.
+      h += '<button type="button" class="scshelf-tab scshelf-dots" data-dots="1"' +
+        ' aria-label="Song actions" title="Song actions">' + scIcon('dots', 17) + '</button>';
       if(SC_STREAM_OK){
         h += '<div class="scshelf-sep"></div>';
         h += '<button type="button" class="scshelf-tab scshelf-src" data-src="1"' +
@@ -20063,6 +20091,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // 85.0.0 - the video glyph opens the viewer for the song that is on;
           // it is not a shelf page, so it does not touch scShelf.page or the source.
           if(this.getAttribute('data-video') === '1'){ scVideoOpen(); return; }
+          if(this.getAttribute('data-dots') === '1'){ scShelfDots(); return; }
           if(this.getAttribute('data-src') === '1'){ scShelfSetSrc(scShelf.src === 's' ? 'd' : 's'); return; }
           scShelfOpenTab(this.getAttribute('data-shelf'));
         });
@@ -20075,6 +20104,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
     Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
+      // 85.3.16 - THE DOTS ARE NOT A PAGE. They carry no mark of their own, and the class
+      // rewrite below would strip the glyph's class off them.
+      if(b.getAttribute('data-dots') === '1') return;
       if(b.getAttribute('data-src') === '1'){
         // 80.6.25 - NO GLYPH IS REPLACED. Both icons were built with the rail and
         // this only chooses which one is drawn, so the node under the thumb keeps
@@ -20141,7 +20173,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
     pendingKey: '', lastLoad: 0, voice: null,
-    fxOn: false, fxRaf: 0,
+    fxOn: false, fxRaf: 0, fxPainted: 0,
     // 85.3.6 - the hand-off while the app is away, and the AI-tuned upscale.
     bg: null, aiTimer: null, aiAsked: '', aiEdge: 0, aiContrast: 0, aiSaturate: 0,
     // 85.3.7 - which size answers, and which of those asks is still the current one.
@@ -20697,6 +20729,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       v.addEventListener('pause', function(){
         scVideoBarState(); scVideoIdleWake();
         scVideoFxStop();
+        scVideoFxPaintOnce();
         scVideoAuxPause();
         if(!v.ended && !scVideoState.blocked) scVideoBig(true);
       });
@@ -20706,8 +20739,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoFxStop(); scVideoAuxPause(); });
       v.addEventListener('stalled', function(){ scVideoSpin(true); scVideoAuxPause(); });
       // Any seek puts the voice on the frame's new second, however it was made.
-      v.addEventListener('seeked', function(){ if(scVideoState.audioMode === 'aux') scVideoAuxAlign(); });
-      v.addEventListener('canplay', function(){ scVideoSpin(false); scVideoWatchStop(); });
+      v.addEventListener('seeked', function(){ if(scVideoState.audioMode === 'aux') scVideoAuxAlign(); scVideoFxPaintOnce(); });
+      v.addEventListener('canplay', function(){ scVideoSpin(false); scVideoWatchStop(); scVideoFxPaintOnce(); });
+      v.addEventListener('loadeddata', function(){ scVideoFxPaintOnce(); });
       v.addEventListener('timeupdate', scVideoClock);
       v.addEventListener('loadedmetadata', function(){
         scVideoSpin(false);
@@ -21414,13 +21448,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoFxCanvas(){
     if(scVideoFxCv) return scVideoFxCv;
     var st = scVideoEl('scVideoStage');
-    if(!st || typeof document === 'undefined' || !document.createElement) return null;
-    if(!st.appendChild) return null;
+    if(!st || typeof document === 'undefined') return null;
     try{
-      var cv = document.createElement('canvas');
-      cv.id = 'scVideoFx';
-      if(cv.setAttribute) cv.setAttribute('aria-hidden', 'true');
-      st.appendChild(cv);
+      // THE CANVAS IS BUILT WITH THE STAGE, NOT A SECOND TIME. This used to create a
+      // canvas, give it id `scVideoFx` and append it, while the stage's own markup already
+      // had a canvas by that name: two full-size layers over the picture, and
+      // `getElementById('scVideoFx')` answering with the one nothing was drawn into. The
+      // canvas the markup has is the one that gets painted now; the made one is only the
+      // fallback for a stage that somehow has none.
+      var cv = scVideoEl('scVideoFx');
+      if(!cv || !cv.getContext){
+        if(typeof document.createElement !== 'function' || !st.appendChild) return null;
+        cv = document.createElement('canvas');
+        cv.id = 'scVideoFx';
+        if(cv.setAttribute) cv.setAttribute('aria-hidden', 'true');
+        st.appendChild(cv);
+      }
       scVideoFxCv = cv;
       scVideoFxCtx = null;
       try{ scVideoFxCtx = cv.getContext ? cv.getContext('2d') : null; }catch(_eFxCtx1){ scVideoFxCtx = null; }
@@ -21534,12 +21577,33 @@ function startLyricsAutoScroll(keepPos, noReset) {
         try{ ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }catch(_eFxReset){}
       }
     }
+    // A FRAME IS ON THE CANVAS. Nothing above may hide the element before this line has
+    // run once, because a canvas with nothing in it is a black stage - and a still picture
+    // (paused, or a size that has just been attached) never reached the frame loop, which
+    // is why the switch could blank the tab it was meant to sharpen.
+    scVideoState.fxPainted = 1;
+    return true;
+  }
+  // ONE FRAME, WHETHER OR NOT THE FILM IS RUNNING. The loop above only paints a picture
+  // that is playing, so a paused film - or one that has just been given a new size and is
+  // waiting to be started - had nothing but the old frame on the canvas, or nothing at all.
+  function scVideoFxPaintOnce(){
+    if(!scVideoState.open || !scVideoState.fxOn || scVideoState.fxBlocked) return false;
+    var v = scVideoEl('scVideoEl');
+    if(!v || !v.src) return false;
+    if(Number(v.readyState) < 2 || !(Number(v.videoWidth) || 0)) return false;
+    try{ scVideoFxPaint(); }catch(_eFxOnce){ return false; }
+    if(scVideoState.fxPainted) scVideoFxApply();
+    return !!scVideoState.fxPainted;
   }
   function scVideoFxFrame(){
     if(!scVideoState.fxOn || !scVideoState.open) return;
     var v = scVideoEl('scVideoEl');
     if(!v || v.paused || v.ended || !v.src) return;
+    var first = !scVideoState.fxPainted;
     scVideoFxPaint();
+    // THE ELEMENT IS ONLY TAKEN OFF THE SCREEN BY A FRAME THAT IS ALREADY ON THE CANVAS.
+    if(first && scVideoState.fxPainted) scVideoFxApply();
     scVideoFxQueue();
   }
   // One frame at a time, on the film's own clock where the phone offers it, so the
@@ -21583,7 +21647,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var st = scVideoEl('scVideoStage'), b = scVideoEl('scVideoBoost');
     // THE SWITCH AND THE PICTURE ARE THE SAME ANSWER. A film that has had the upscaler taken
     // off it for being short of frames shows the switch off too, or the button is a lie.
-    var on = !!(scVideoState.open && scVideoState.fxOn && !scVideoState.fxBlocked && scVideoFxCv);
+    var on = !!(scVideoState.open && scVideoState.fxOn && !scVideoState.fxBlocked && scVideoFxCv && scVideoState.fxPainted);
+    // AND A CANVAS WITH NOTHING IN IT IS NOT A PICTURE. Until one frame has landed the
+    // element stays on the glass and the sharpen is invisible - which is exactly what the
+    // switch was reporting: "on", with the picture either unchanged or gone. A frame the
+    // player can already give up is taken here; the loop takes it as soon as it runs.
+    if(!on && scVideoState.open && scVideoState.fxOn && !scVideoState.fxBlocked && scVideoFxCv && !scVideoState.fxPainted){
+      var pv = scVideoEl('scVideoEl');
+      if(pv && pv.src && Number(pv.readyState) >= 2 && Number(pv.videoWidth) > 0){
+        try{ scVideoFxPaint(); }catch(_eFxNow){}
+      }
+      on = !!(scVideoState.fxPainted && scVideoState.fxOn && !scVideoState.fxBlocked);
+    }
     if(st) st.classList.toggle('sc-vfx', on);
     if(b){
       b.classList.toggle('on', on);
@@ -21599,6 +21674,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.fxManual = !!scVideoState.fxOn;
     scVideoState.perfBad = 0;
     scVideoFxPref(scVideoState.fxOn);
+    // THE TAP IS ANSWERED ON THIS FRAME, PAUSED OR NOT. A film that is not running never
+    // enters the frame loop, so without this the switch turned on with nothing to show for
+    // it until the picture was started again.
+    scVideoFxPaintOnce();
     scVideoFxApply();
     if(scVideoState.fxOn) scVideoAiSchedule();
     var tuned = Number(scVideoState.aiEdge) > 0;
@@ -21806,6 +21885,34 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var chip = scVideoEl('scVideoChip');
     if(chip) chip.setAttribute('aria-label', r ? 'Video quality: ' + r.label : 'Video quality');
   }
+  // A SIZE PICKED BY HAND IS A FRESH START, NOT A ROW IN A LIST. Three things stood between
+  // a tap on a size and that size playing:
+  //
+  //   * the pick went through `scVideoLive`, which drops every height that failed on this
+  //     film - so tapping a height that had been marked dead silently played a DIFFERENT
+  //     one, and the footer blamed the source. A hand pick reads the whole ladder.
+  //   * the height kept its marks (`deadH`, `slowH`, the rate's walk, the rescue and stream
+  //     bookkeeping), so even when it was applied the machinery around it had already given
+  //     up on it: the rate had spent its steps and the reader would not read it again.
+  //   * the same height was a no-op even when the picture was not up at all - the chip said
+  //     1080p over a black stage and tapping 1080p did nothing.
+  //
+  // And a refused range ask during a pick is a verdict about ONE request, not about the
+  // size - the load path has not marked heights for it since 85.3.8, and this path should
+  // not either: the list must not go dim because a probe answered no.
+  function scVideoChooseFresh(h){
+    var n = Number(h) || 0;
+    if(!n) return;
+    try{ delete scVideoState.deadH[n]; }catch(_eFreshD){}
+    try{ delete scVideoState.slowH[n]; }catch(_eFreshS){}
+    try{ delete scVideoState.rescueH[n]; }catch(_eFreshR){}
+    scVideoState.streamFor = null;
+    scVideoState.rateSteps = 0;
+    scVideoState.rateNow = 0;
+    scVideoState.rateBest = 0;
+    scVideoState.perfBad = 0;
+    scVideoState.perf = null;
+  }
   function scVideoQualityChoose(h){
     scVideoQualityToggle(false);
     scVideoIdleWake();
@@ -21815,21 +21922,28 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.want = Number(h) || 0;
     var r = scVideoRungFor(scVideoState.rungs, h);
     if(!r) return;
-    if(scVideoState.rung && r.h === scVideoState.rung.h){ scVideoQualityMark(); return; }
+    scVideoChooseFresh(Number(h) ? r.h : 0);
+    if(scVideoState.rung && r.h === scVideoState.rung.h){
+      // THE SIZE YOU ARE ON IS STILL A REQUEST TO SEE IT. A picture that is not up (a black
+      // stage, or a film that never started) is put up again on this tap instead of being
+      // answered with a mark and nothing else.
+      var vv = scVideoEl('scVideoEl');
+      var up = !!(vv && vv.src && Number(vv.readyState) >= 2);
+      if(up){ scVideoQualityMark(); return; }
+    }
     // A SIZE PICKED BY HAND IS ASKED THE SAME QUESTION. This is the one place a viewer can
     // insist on a size, so a pick this source will not serve is named on the footer and the
     // picture lands on the sharpest size that answers - instead of going black on the pick.
     var token = (scVideoState.pickSeq = (scVideoState.pickSeq || 0) + 1);
     var asked = r;
-    scVideoPick(scVideoState.rungs, h).then(function(pick){
+    scVideoPick(scVideoState.rungs, h, true).then(function(pick){
       if(token !== scVideoState.pickSeq || !scVideoState.open) return;
-      (pick.refused || []).forEach(function(hh){ if(hh) scVideoState.deadH[hh] = 1; });
       var rung = pick.rung || asked;
       scVideoApplyRung(rung, true);
       if(Number(rung.h) !== Number(asked.h)){
-        scVideoFoot(asked.label + ' is not served here for this video' +
+        scVideoFoot(asked.label + ' is not in this video' +
           ((pick.refused || []).length ? ' (' + pick.refused.map(scVideoSizeLabel).join(', ') + ' did not answer)' : '') +
-          ' - playing ' + rung.label + ', the sharpest size that opens here.');
+          ' - playing ' + rung.label + ', the nearest size it has.');
       }
     }).catch(function(){ scVideoApplyRung(asked, true); });
   }
@@ -21895,8 +22009,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // first that answers is the size. A refused height comes back in `refused` so the caller
   // can mark it in the list, and when nothing answers the ask is kept and the failure road
   // decides - guessing a smaller one here would be the walk 85.3.6 took out.
-  function scVideoPick(rungs, want){
-    var pool = scVideoLive(rungs);
+  function scVideoPick(rungs, want, exact){
+    // A HAND PICK READS THE WHOLE LADDER. `scVideoLive` is the automatic ladder's view - it
+    // leaves out heights this film already failed - and it has no business deciding what a
+    // size the owner tapped means. `exact` is that tap.
+    var pool = exact ? [] : scVideoLive(rungs);
     var use = pool.length ? pool : (rungs || []);
     var asked = scVideoRungFor(use, want);
     if(!asked) return Promise.resolve({ rung: null, refused: [], asked: null });
@@ -22190,6 +22307,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.via = via;
     scVideoState.blocked = false;
     scVideoState.watchMore = 0;              // a new source gets its own two windows
+    // AND ITS OWN FIRST FRAME. The canvas still holds the last picture of the size that
+    // was left, so it may not cover the stage again until it holds this one.
+    scVideoState.fxPainted = 0;
     scVideoState.audio = scVideoAudioEl();
     scVideoState.swapAt = (Date.now ? Date.now() : new Date().getTime());
     var start = scVideoState.resumeAt;
@@ -23250,6 +23370,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoChip('');
     scVideoFoot('');
     scVideoClock();
+  }
+
+  // 85.3.16 - THE FILM OF THE SONG THE DOTS WERE OPENED ON. The tab shows the song that is
+  // ON, so a video asked for from a row that is not playing starts that row's song first -
+  // and only when it is not already the song of the second. A song from the source has no
+  // library row, so there is nothing to start and the tab follows what is playing.
+  function scVideoForTrack(t){
+    if(typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY) return false;
+    if(!t || !t.id) return false;
+    var id = String(t.id);
+    var on = false;
+    try{ on = (typeof queue !== 'undefined' && typeof queueIndex !== 'undefined' && queueIndex >= 0 && String(queue[queueIndex] || '') === id); }catch(_eForOn){ on = false; }
+    if(!on){
+      try{ if(typeof playTrackInPlaylistContext === 'function') playTrackInPlaylistContext(id); }
+      catch(_eForPlay){ return false; }
+    }
+    scVideoOpen();
+    return true;
   }
 
   function scVideoOpen(){
@@ -24495,7 +24633,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.15';
+  const APP_VERSION = '85.3.16';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25205,6 +25343,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.16', date: 'November 25, 2026', title: 'The picture is painted before it is covered, every size can be picked again, and the rail has the three dots', items: [
+      'The upscaler draws a frame before it takes the picture over, so turning HD+ on lands the sharpen on the frame you are looking at - paused or playing - instead of covering the stage with a canvas that had nothing in it.',
+      'Every size in the quality list can be picked again: choosing one clears what the tab had learned against it for this film and plays that exact size, instead of quietly landing on a different one.',
+      'The music video is in the song menu as well as on the rail, and the rail has its own three dots: the same song actions sheet opens from the side of the screen, with fewer dividers and one size for every glyph.'
+    ] },
     { version: '85.3.15', date: 'November 25, 2026', title: 'The words move with the song: the recording times every line, and a model is never the clock', items: [
       'The lyric highlight is timed by the song itself: each line is placed on the rise in the recording where it is actually sung, so a line moves with the tempo of the take instead of with how many letters it holds.',
       'A song played over the network is measured from the same bytes it is already playing, so its words are no longer spaced by a share of the song length - and the lyric nudge and the word-by-word timing work on those songs too.',
@@ -37414,6 +37557,25 @@ function _fallbackCopy(text){
     lyricsBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg> ` + (t.lyricsOff ? 'Lyrics (off for this song)' : 'Lyrics');
     lyricsBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; fetchLyrics(t); });
     list.appendChild(lyricsBtn);
+
+    // 85.3.16 - THE MUSIC VIDEO IS PART OF THE APP, NOT A GLYPH ON ITS OWN. The film was
+    // reachable only from the video glyph on the rail, which is the one place nobody
+    // looks for "play this song's video". The song's own three dots is where every other
+    // action for a song lives, so the video is here as well - for the song the dots were
+    // opened on, whether or not it is the one playing (a video asked for from a row starts
+    // that row's song first, because the tab follows the song that is on).
+    // (The store build has no video tab and no player that can reach a video-host stream,
+    // so there is no row to offer there.)
+    if(typeof SC_IS_PLAY === 'undefined' || !SC_IS_PLAY){
+      const videoBtn = document.createElement('button');
+      videoBtn.id = 'songActionsVideo';
+      videoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h10.5a1 1 0 0 1 1 1v2.6l4.5-2.8v10.4l-4.5-2.8V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/></svg> Music video`;
+      videoBtn.addEventListener('click', function(){
+        $('songActionsBackdrop').style.display='none';
+        scVideoForTrack(t);
+      });
+      list.appendChild(videoBtn);
+    }
 
     const editBtn = document.createElement('button');
     editBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 000-1.41l-2.34-2.34a.996.996 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg> Edit song info`;

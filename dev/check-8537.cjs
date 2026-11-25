@@ -312,8 +312,14 @@ const adaptiveOnly = [
   console.log('\n5. A size picked by hand is asked the same question');
   // =============================================================================
   const chooseSrc = grab('scVideoQualityChoose');
-  ok('the hand pick asks before it attaches', /scVideoPick\(scVideoState\.rungs, h\)/.test(chooseSrc));
-  ok('a hand pick that is not served says so and lands on the one that is', /is not served here for this video/.test(chooseSrc));
+  // Rewritten by 85.3.16. The contract this gate was written for - a hand pick is asked
+  // before anything is attached, and a pick that is not served says so instead of going
+  // black on it - is unchanged; what changed is HOW it is asked. The pick now reads the
+  // whole ladder (`true`) so a height this film already failed is not silently swapped for
+  // a different one, and the line no longer blames the source for a size the video simply
+  // does not have.
+  ok('the hand pick asks before it attaches', /scVideoPick\(scVideoState\.rungs, h, true\)/.test(chooseSrc));
+  ok('a hand pick that is not served says so and lands on the one that is', /is not in this video/.test(chooseSrc));
   ok('a stale hand pick cannot attach after another one', /token !== scVideoState\.pickSeq/.test(chooseSrc));
 
   // =============================================================================

@@ -306,7 +306,10 @@ function releaseChecks() {
   while ((m = re.exec(page))) { scripts++; try { new Function(m[1]); } catch (e) { bad++; console.log('    ' + e.message); } }
   ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on 85.3.15', vPage === '85.3.15', vPage);
+  // Relaxed by 85.3.16 - the lyric contract this gate proves has not changed since, and a
+  // later page number is not a regression in it.
+  ok('the page is on 85.3.15 or newer',
+    /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 15, vPage);
   ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
   ok('the notes carry the 85.3.15 entry', page.includes("version: '85.3.15'"));
   ok('the new entry is above 85.3.14', page.indexOf("version: '85.3.15'") < page.indexOf("version: '85.3.14'"));
