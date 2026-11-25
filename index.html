@@ -14565,9 +14565,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // and one tap of the reset button takes it back off.
   async function scAutoAlignLyricsToAudio(){
     try{
-      var tid = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      var t = tid ? allTracks.find(function(tr){ return tr.id === tid; }) : null;
-      if(!t || !t.file || !currentLyricsText) return false;
+      // 85.3.15 - the sheet on the screen, whichever list its song came from.
+      var t = scLyricSong();
+      if(!t || !currentLyricsText) return false;
+      var tid = String(t.id);
       if(scLyricsAlignedNow()) return false;              // the owner's own taps win
       var key = String(tid) + '|' + currentLyricsText.length;
       if(scLyricsAlignKey === key || scLyricsAlignBusy) return false;
@@ -14593,7 +14594,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
                        (dur0 > 0 && lastStamp !== null && lastStamp > dur0 + SC_LYRICS_SHEET_MIN);
       if(!suspicious) return false;
       scLyricsAlignBusy = true;
-      var arr = await blobToArrayBufferFallbackCrop(t.file);
+      var src = await scLyricAudioSource();
+      if(!src) return false;
+      var arr = await blobToArrayBufferFallbackCrop(src.blob);
       if(!arr) return false;
       var ctx = new (window.AudioContext || window.webkitAudioContext)();
       var decoded = null;
@@ -14604,8 +14607,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       scLyricsAlignKey = key;
       if(off === null) return false;
       // The song may have moved on while the audio decoded.
-      var still = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      if(String(still) !== String(tid) || lyricsCurrentTrack !== tid) return false;
+      var still = scLyricSong();
+      if(!still || String(still.id) !== tid) return false;
       lyricsSyncOffsetSec = off;
       try{ dbPut('meta', { key: 'lyricsSyncOff_' + String(tid), value: off }); }catch(_ePut){}
       try{ updateLyricsSyncLabel(); }catch(_eLbl){}
@@ -14935,6 +14938,61 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       return id ? allTracks.find(function(tr){ return tr.id === id; }) : null;
     }catch(_eCt){ return null; }
   }
+  // 85.3.15 - WHICH SONG IS ASKING, AND WHAT CAN BE MEASURED FOR IT.
+  // Every measuring path (the automatic timing, the word timing and the sheet's own
+  // offset) looked the song up in the LIBRARY and read its `file`. A song played from
+  // the source has no library record and no `file` - its bytes live in the read the
+  // source player already made - so none of those paths could run for it at all, and
+  // the sheet fell back to the only thing left: a share of the song's LENGTH worked
+  // out from the letters in each line. That is the "the words move by character and
+  // length" report, and it was the only timing a source song could ever get.
+  function scLyricSong(){
+    try{
+      var st = (typeof scStreamSong === 'function') ? scStreamSong() : null;
+      if(st && String(st.id) === String(lyricsCurrentTrack)) return st;
+    }catch(_eSongS){}
+    return scLyricTrack();
+  }
+  // The id the sheet's own nudge and measurements are stored under. A song from the
+  // source has an id of its own ("scstream:12") that the queue cannot name - which is
+  // why the nudge, the alignment and the word timing were all skipped on one.
+  function scLyricSheetId(){
+    var s = scLyricSong();
+    return s ? String(s.id) : '';
+  }
+  // The bytes this song can be measured from, whichever list it came from. A library
+  // song hands its own file; a song from the source hands the read the source already
+  // made - the same bytes its own blob address is playing, so nothing is fetched
+  // twice - and only if that is gone is the element's own address read back once.
+  async function scLyricAudioSource(){
+    var s = scLyricSong();
+    if(!s) return null;
+    var blob = s.file || null;
+    if(!blob){
+      // THE READ HAS TO BE THIS SONG'S. The player keeps the bytes of the song it last
+      // read, and a new song may still be reading - measuring the previous file would
+      // put this song's words on another song's rises, which is worse than no timing.
+      try{
+        var want = String(s.streamId || '');
+        if(scStreamState && scStreamState.blob && want && String(scStreamState.blobId || '') === want) blob = scStreamState.blob;
+      }catch(_eBlobState){ blob = null; }
+    }
+    if(!blob || !blob.size) return null;
+    return { id: String(s.id), blob: blob, duration: Number(s.duration) || 0, song: s };
+  }
+  // 85.3.15 - THE SHEET MAY ALREADY BE OPEN WHEN THE BYTES ARRIVE. A song from the
+  // source is read after it is tapped, so the first attempt can find nothing to
+  // measure; when the read lands this asks again instead of leaving the words on the
+  // character count until the sheet is closed and reopened.
+  function scLyricKickMeasure(){
+    try{
+      if(!currentLyricsText || currentLyricsSynced) return;
+      if(!scLyricSong()) return;
+      scAutoTimeFailedKey = '';
+      scAutoTimeFailedAt = 0;
+      if(typeof scAutoTimeCurrentLyrics === 'function') scAutoTimeCurrentLyrics();
+    }catch(_eKick){}
+  }
   function scLyricAlignKey(){
     var t = scLyricTrack();
     return t ? String(t.id) : '';
@@ -15011,22 +15069,25 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   var scAutoTimeFailedKey = '';
   var scAutoTimeFailedAt = 0;
   var SC_AUTOTIME_RETRY_MS = 20000;
-  async function scSyncLyricsFromAudio(track, plain){
-    if(!track || !track.file || !plain || !String(plain).trim()) return null;
-    if(scAutoSyncBusy[track.id]) return null;
-    scAutoSyncBusy[track.id] = true;
+  // 85.3.15 - the bytes are handed in, not looked up here, so the same measurement
+  // serves a library song and a song from the source (which has no `file`).
+  async function scSyncLyricsFromAudio(src, plain){
+    if(!src || !src.blob || !plain || !String(plain).trim()) return null;
+    var key = String(src.id);
+    if(scAutoSyncBusy[key]) return null;
+    scAutoSyncBusy[key] = true;
     try{
-      var arr = await blobToArrayBufferFallbackCrop(track.file);
+      var arr = await blobToArrayBufferFallbackCrop(src.blob);
       if(!arr) return null;
       var ctx = new (window.AudioContext || window.webkitAudioContext)();
       var decoded = null;
       try{ decoded = await ctx.decodeAudioData(arr); }catch(_eDec){ decoded = null; }
       try{ ctx.close(); }catch(_eClose){}
       if(!decoded) return null;
-      var lrc = scTimeLyricsFromOnsets(String(plain).split('\n'), decoded.duration || track.duration || 0, scOnsetEnvelope(decoded), SC_ONSET_HOP);
+      var lrc = scTimeLyricsFromOnsets(String(plain).split('\n'), decoded.duration || src.duration || 0, scOnsetEnvelope(decoded), SC_ONSET_HOP);
       return lrc;
     }catch(_eSync){ return null; }
-    finally{ delete scAutoSyncBusy[track.id]; }
+    finally{ delete scAutoSyncBusy[key]; }
   }
 
   // Time whatever is on screen to the track that is playing. Returns true when
@@ -15034,42 +15095,48 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // there was no audio to measure.
   async function scAutoTimeCurrentLyrics(){
     try{
-      var tid = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      var t = tid ? allTracks.find(function(tr){ return tr.id === tid; }) : null;
+      // 85.3.15 - THE SONG ON THE SHEET, NOT THE SONG IN THE QUEUE.
+      var t = scLyricSong();
       if(!t || !currentLyricsText || !currentLyricsText.trim()) return false;
-      var _atKey = String(tid) + '|' + currentLyricsText.length + '|' + currentLyricsText.slice(0, 32);
+      var tid = String(t.id);
+      var _atKey = tid + '|' + currentLyricsText.length + '|' + currentLyricsText.slice(0, 32);
       if(scAutoTimedKey === _atKey) return false;
       // A failed attempt is remembered briefly, not forever - see the note above.
       if(scAutoTimeFailedKey === _atKey && (Date.now() - scAutoTimeFailedAt) < SC_AUTOTIME_RETRY_MS) return false;
-      // 73.1.4 - when a key is set and the song's own bytes are here, the model
-      // does the timing. It hears the tempo, the beat, the intro and the chorus
-      // returns, which is exactly the part a length count can never know. The
-      // energy measurement below is only the stand-in for a song the model
-      // cannot hear, so the words no longer ride on how long a line is.
-      if(_aiGeminiKey && t.file && !scAiTimedTracks[String(tid)]){
+      // 85.3.15 - THE RECORDING IS ASKED FIRST, AND IT IS ALWAYS ASKED FIRST.
+      //
+      // 73.1.4 put the model in front whenever a key was set and the file was on the
+      // device, so on a sheet the app could measure exactly, a model that never heard
+      // the song replaced the measured rhythm - and what the owner hears is the words
+      // moving to a rhythm that changes from one sync to the next instead of to the
+      // song. The measurement below is the song's own rises: it follows the tempo, a
+      // pause, a break and a chorus that comes back faster, and it gives the same
+      // answer every time. A model is now only consulted when there is NO recording to
+      // measure (the song is not on this device and its bytes could not be read), where
+      // a model that cannot hear it is the only thing left to ask.
+      var src = await scLyricAudioSource();
+      var lrc = src ? await scSyncLyricsFromAudio(src, currentLyricsText) : null;
+      if(!lrc && _aiGeminiKey && !t.stream && !scAiTimedTracks[tid]){
         var _aiOk = await aiSyncLyrics(true);
-        // (aiSyncLyrics has already written the timed sheet onto the song and shown
-        // it; the one-shot key below is derived from the TEXT, so the new timed text
-        // is a new key and the guard passes on its own.)
         if(_aiOk){ toast('Lyrics timed to this song by AI', 2200); return true; }
       }
-      var lrc = await scSyncLyricsFromAudio(t, currentLyricsText);
       if(!lrc){
         scAutoTimeFailedKey = _atKey;
         scAutoTimeFailedAt = Date.now();
         return false;
       }
       // The song may have moved on while the audio decoded.
-      var stillId = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      if(String(stillId) !== String(tid) || lyricsCurrentTrack !== tid) return false;
+      var still = scLyricSong();
+      if(!still || String(still.id) !== tid) return false;
       t.lyrics = lrc;
       t.lyricsSynced = true;
       // 73.3.7 - the timing has to SURVIVE the app being closed. saveMeta() only
       // writes the playlists, the id counter and the albums; the words and their
       // timestamps live on the song, so nothing was stored and the next launch
       // measured the same song again (and showed the old guess until it did).
-      // The song record is what carries them.
-      try{ persistTrackMeta(t); }catch(_ePersistTiming){}
+      // The song record is what carries them - and scLyricsPersist writes a song from
+      // the source into the source's own store, where the queue cannot reach.
+      try{ scLyricsPersist(t); }catch(_ePersistTiming){}
       scAutoTimedKey = _atKey;
       scAutoTimeFailedKey = '';
       currentLyricsText = lrc;
@@ -15306,6 +15373,39 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return lt.querySelectorAll(".lyric-line")[lyricsHighlightIdx] || null;
   }
 
+  // 85.3.15 - THE WORDS ON THE SHEET STAY THE WORDS ON THE SHEET.
+  // A model asked only to place timestamps can hand back a translation, a paraphrase
+  // or a shortened chorus, and the sheet then shows words nobody sang - which is the
+  // other half of "the lyrics should be actual lyrics". Every timed line is compared,
+  // in order, with the sheet it was given; a timing whose words no longer match is
+  // refused rather than shown. Counting lines is not enough: a model can keep the count
+  // and change the text, so the text is what is compared.
+  function scLyricLineKey(s){
+    return String(s == null ? '' : s)
+      .replace(scLrcTagRe(), ' ')
+      .toLowerCase()
+      .replace(/[^a-z0-9\u00c0-\u024f\u0400-\u04ff\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7a3]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function scLyricRowsMatchSheet(rows, lines){
+    var keys = [], i;
+    for(i = 0; i < (lines || []).length; i++){
+      var k = scLyricLineKey(lines[i]);
+      if(k) keys.push(k);
+    }
+    if(!keys.length || !rows || !rows.length) return false;
+    var same = 0, at = 0;
+    for(var r = 0; r < rows.length; r++){
+      var rk = scLyricLineKey(rows[r].text);
+      if(!rk) continue;
+      for(var j = at; j < keys.length; j++){
+        if(keys[j] === rk){ same++; at = j + 1; break; }
+      }
+    }
+    return same >= Math.ceil(keys.length * 0.8);
+  }
+
   // ---- AI Sync: use Gemini to generate timestamps for unsynced lyrics ----
   async function aiSyncLyrics(silent) {
     if (!_aiGeminiKey) { if(!silent) toast("Add a Gemini API key in Settings to use AI Sync."); return; }
@@ -15427,6 +15527,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         delete scAiTimedTracks[String(t.id)];
         return false;
       }
+      // 85.3.15 - a timing may not change the words. If the model rewrote, translated
+      // or dropped lines, this sheet is refused and the song keeps its own text.
+      if(!scLyricRowsMatchSheet(_rows, _plainLines)){
+        if(!silent) toast("The AI changed the words — keeping this song's own lyrics.", 3400);
+        delete scAiTimedTracks[String(t.id)];
+        return false;
+      }
       // 73.1.6 - the model names the line, the recording says the time. Pull any
       // line the model dropped inside an instrumental stretch to where the voice
       // resumes, then snap the rest onto the nearest real rise, ignoring the
@@ -15525,7 +15632,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // Load this song’s saved sync nudge before the first poll.
     try{
       lyricsSyncOffsetSec = 0;
-      var _sid = (queueIndex >= 0 && queueIndex < queue.length) ? String(queue[queueIndex]) : '';
+      // 85.3.15 - the nudge belongs to the sheet on the screen, which for a song from
+      // the source is not a queue id at all.
+      var _sid = scLyricSheetId();
       if(_sid){ Promise.resolve(dbGet('meta', 'lyricsSyncOff_' + _sid)).then(function(r){ if(r) lyricsSyncOffsetSec = Number(r.value) || 0; updateLyricsSyncLabel(); }).catch(function(){}); }
       updateLyricsSyncLabel();
     }catch(_eso){}
@@ -16054,6 +16163,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   function scWordTrackId(){
+    // 85.3.15 - a word timing is stored per song, and a song from the source has an id
+    // of its own. Reading only the queue meant its words were never measured either.
+    try{
+      var st = (typeof scStreamSong === 'function') ? scStreamSong() : null;
+      if(st && String(st.id) === String(lyricsCurrentTrack)) return String(st.id);
+    }catch(_eWidS){}
     try{
       if(queueIndex >= 0 && queueIndex < queue.length) return String(queue[queueIndex]);
     }catch(_eWid){}
@@ -16063,18 +16178,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // Take the measurement for the song on screen: from the meta store when it is there,
   // from the audio when it is not. Nothing blocks - the pacer keeps the syllable shape
   // until the numbers arrive, then re-picks the line.
+  var scWordTryAt = 0;
   function scWordMeasureKick(sheetText){
     var tid = scWordTrackId();
     if(!tid || !sheetText || scWordBusy) return;
     var len = String(sheetText).length;
     var known = scWordTimes[tid];
     if(known && known.len === len) return;
+    // 85.3.15 - a song still being read has no bytes yet. The poll asks again, but not
+    // twenty times a second: one attempt per second and a half until the read lands.
+    if(Date.now() - scWordTryAt < 1500) return;
+    scWordTryAt = Date.now();
     var t = null;
-    try{ t = allTracks.find(function(tr){ return String(tr.id) === tid; }); }catch(_eFind){}
-    // NO FILE, NO MEASUREMENT - and remember it, or the 50ms poll re-reads the library
-    // twenty times a second for a song that can never be measured. The empty record is
-    // keyed on the sheet length like a real one, so a different sheet still tries.
-    if(!t || !t.file){ scWordTimes[tid] = { len: len, hop: 0, lines: [] }; return; }
+    try{ t = scLyricSong(); }catch(_eFind){}
+    if(t && String(t.id) !== tid) t = null;
+    // NO FILE AND NO READ, NO MEASUREMENT - and remember it, or the 50ms poll re-reads
+    // the library twenty times a second for a song that can never be measured. A song
+    // from the source is measured from the read it already made, so it is not excluded
+    // here any more. The empty record is keyed on the sheet length like a real one, so
+    // a different sheet still tries.
+    if(!t || (!t.file && !t.stream)){ scWordTimes[tid] = { len: len, hop: 0, lines: [] }; return; }
     scWordBusy = true;
     (async function(){
       try{
@@ -16088,7 +16211,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
           lastLyricsIdx = -1;
           return;
         }
-        var arr = await blobToArrayBufferFallbackCrop(t.file);
+        // 85.3.15 - whichever bytes this song has, the same measurement reads them.
+        var src = await scLyricAudioSource();
+        if(!src) return;
+        var arr = await blobToArrayBufferFallbackCrop(src.blob);
         if(!arr) return;
         var ctx = new (window.AudioContext || window.webkitAudioContext)();
         var dec = null;
@@ -16438,7 +16564,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var scStreamState = {
     tracks: null, playlists: null, results: null, curId: '', url: '', urlAt: 0,
     busy: false, ready: false, q: '', built: false, audio: null, playing: false,
-    mime: '', size: 0, bytes: 0, fixes: 0, pl: '', alts: [], blobUrl: '',
+    mime: '', size: 0, bytes: 0, fixes: 0, pl: '', alts: [], blobUrl: '', blob: null, blobId: '',
     via: '', err: '', barOn: false, genre: '', genres: null, railLeft: 0,
     albums: null, plKind: 'pl'
   };
@@ -17623,8 +17749,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
           if(!blob.size) return null;
           if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
           scStreamState.blobUrl = URL.createObjectURL(blob);
+          // 85.3.15 - THE SAME BYTES THE PLAYER HAS, FOR THE LYRIC TIMING. The read is
+          // already held as a blob address, so keeping the blob itself costs no memory
+          // and lets the words be measured from this song instead of from a share of
+          // its length. Cleared with the rest of the per-song read on the next song.
+          scStreamState.blob = blob;
+          scStreamState.blobId = String(scStreamState.curId || '');
           scStreamState.bytes = Number(blob.size) || 0;
           scStreamState.mime = mime;
+          try{ scLyricKickMeasure(); }catch(_eKickRead){}
           return scStreamState.blobUrl;
         })
         .catch(function(){ return null; });
@@ -17853,6 +17986,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ scStreamAudio().pause(); }catch(_ePause){}
     if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
     scStreamState.blobUrl = '';
+    scStreamState.blob = null;
+    scStreamState.blobId = '';
     scStreamState.url = '';
     scStreamState.urlAt = 0;
     scStreamState.err = '';
@@ -18692,6 +18827,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // The cache owns this URL now, so the next read must not revoke it out from under
     // a replay. scStreamSource() clears the entry it replaced; this one is kept.
     try{ scStreamState.blobUrl = ''; }catch(_eBz){}
+    try{ scStreamState.blob = null; scStreamState.blobId = ''; }catch(_eBz2){}
   }
   // A signed URL lasts half an hour; the resolver's answer is kept for the same song
   // so Next does not pay for it twice.
@@ -18958,6 +19094,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ scStreamAudio().pause(); }catch(_e){}
       scStreamState.curId = '';
       scStreamState.blobUrl = '';
+      scStreamState.blob = null;
+      scStreamState.blobId = '';
     }
     if(scStreamState.pl && !(scStreamState.playlists || []).some(function(p){ return String(p.name) === String(scStreamState.pl); })) scStreamState.pl = '';
     scStreamSave();
@@ -23378,7 +23516,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function nudgeLyricsSync(delta){
     lyricsSyncOffsetSec = Math.max(-SC_LYRICS_OFF_MAX, Math.min(SC_LYRICS_OFF_MAX, Math.round((lyricsSyncOffsetSec + delta) * 10) / 10));
     try{
-      var tid = (queueIndex >= 0 && queueIndex < queue.length) ? String(queue[queueIndex]) : '';
+      var tid = scLyricSheetId();
       if(tid) dbPut('meta', { key: 'lyricsSyncOff_' + tid, value: lyricsSyncOffsetSec });
     }catch(e){}
     lastLyricsIdx = -1;          // force the next poll to re-pick the line
@@ -24357,7 +24495,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.14';
+  const APP_VERSION = '85.3.15';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25067,6 +25205,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.15', date: 'November 25, 2026', title: 'The words move with the song: the recording times every line, and a model is never the clock', items: [
+      'The lyric highlight is timed by the song itself: each line is placed on the rise in the recording where it is actually sung, so a line moves with the tempo of the take instead of with how many letters it holds.',
+      'A song played over the network is measured from the same bytes it is already playing, so its words are no longer spaced by a share of the song length - and the lyric nudge and the word-by-word timing work on those songs too.',
+      'When the app has the recording, the model is not asked to invent a rhythm for it: the timing follows the song and gives the same answer every time, and a model that rewrites or translates the words has its timing refused instead of replacing them.'
+    ] },
     { version: '85.3.14', date: 'November 24, 2026', title: 'The film is this song, all of it: the title has to name the track, and a teaser is not the video', items: [
       'The music video tab now plays the video of the song that is on, not another song by the same artist: a result whose title does not name this track is never offered, however well its length matches.',
       'A clip that runs well short of the song - a teaser, a short, a cut of the intro - is no longer the film: the tab opens a full-length upload, or shows the cover and says it found none.',

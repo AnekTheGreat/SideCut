@@ -1,5 +1,91 @@
 # SideCut — repository memory
 
+## 85.3.15 (November 25, 2026): the recording is the clock for every lyric, on every song, and a model may not rewrite the words
+
+**The owner's report**: "why is the lyrics only displaying by character and length it should
+be by song and it's rhythm and rhythm changes with ai the lyrics should be actual lyrics and
+coodernate with the song". Three faults, and the first two explain the third.
+
+**THE SHEET WAS TIMED BY LETTERS BECAUSE THE SONG COULD NOT BE MEASURED.** Every measuring
+path in the lyrics module - `scAutoTimeCurrentLyrics` (the automatic timing), `scWordMeasureKick`
+(the word-by-word and letter-by-letter timing) and `scAutoAlignLyricsToAudio` (the sheet's own
+offset) - found its song through `queueIndex` / `allTracks` and read `track.file`. A song played
+from the network has no library record, no `file`, and an id (`scstream:12`) the queue cannot
+name: the player already holds its bytes as a Blob for the address it is playing, but nothing
+handed that Blob to the lyrics. So none of the three paths could run at all, and the only timing
+left was `scPlainSheetStarts` - a share of the song's LENGTH worked out from the syllable (that
+is, character) count of each line, with no idea where the singing starts, where a break is, or
+whether the take speeds up. Every word and letter after it was paced by the same share. That is
+exactly "only displaying by character and length".
+
+**AND EVEN A SONG THAT COULD BE MEASURED WAS HANDED TO THE MODEL FIRST.** 73.1.4 put `aiSyncLyrics`
+in front of the measurement whenever a Gemini key was set and the file was on the device, so a
+model that never heard the song wrote the rhythm and the measured onsets were only a stand-in for
+when it failed. That is the "rhythm changes with ai" - the timing was different from one sync to
+the next because it was guessed, not heard. The measurement now runs first, always; the model is
+only asked when there is no recording to measure (the song is not on this device and its bytes
+could not be read), and never for a song from the network, whose bytes are always available.
+
+**ONE VIEW OF THE SONG, WHICHEVER LIST IT CAME FROM.** New `scLyricSong()` answers "the song the
+sheet belongs to" (the source song when `lyricsCurrentTrack` names it, the library row otherwise),
+`scLyricSheetId()` names the nudge and the measurement, and `scLyricAudioSource()` returns the
+bytes that can be measured - a library song's own file, or the read the player already made.
+The read is kept with the id that produced it (`scStreamState.blob` / `blobId`), so a stale read
+from the previous song is never measured against this one, and it is cleared wherever the blob
+address is. `scSyncLyricsFromAudio` now takes those bytes instead of looking a track up. The
+player calls `scLyricKickMeasure()` when a read lands while the sheet is open, so a song still
+being read stops being timed by letters as soon as its own audio arrives. `scWordTrackId` reads
+the same song, so the word and letter timing is measured for a source song too, and the nudge in
+the sheet is stored and read under the sheet id rather than a queue index that a source song does
+not have. `scWordMeasureKick` retries at most every 1.5 s while a read is still in flight, instead
+of re-reading the library twenty times a second.
+
+**AND A TIMING MAY NOT CHANGE THE WORDS.** The model is no longer the clock, but it can still be
+asked for a song nothing can measure - and a model asked to place timestamps can hand back a
+translation, a paraphrase or a shortened chorus, which is the other half of "the lyrics should be
+actual lyrics". New `scLyricRowsMatchSheet` compares every returned line with the sheet it was
+given, in order and by its words (punctuation, case and stamps ignored); a timing that changed
+more than a fifth of the lines is refused and the song keeps its own text, with the line
+"The AI changed the words - keeping this song's own lyrics."
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85315.cjs` passes **63 assertions, 0 failed** - the shipped functions cut
+out of `index.html` by name and braces and run in a vm against a fake library, a fake source song,
+fake reads and recorders. The ones this release is about: the sheet finds a library song and a
+source song, and a source song's read is what gets measured, named by the sheet id and carrying
+the song length; a read belonging to another song, and an empty read, are never measured; with a
+key set the recording is measured and the model is **not** asked, on a library song and on a
+source song, the timing is stored through `scLyricsPersist` and shown as timed; a song with no
+bytes is left as it is and the failure remembered under its own id; a library song with no file
+still asks the model, which is the only case it is for; `scSyncLyricsFromAudio` refuses no source,
+no bytes, no words and a measurement already running, and clears its mark when it finishes; the
+word timing names the source song on the sheet and never borrows a source song that is not it;
+the words check accepts the same sheet, ignores punctuation/case/stamps, accepts one line lost in
+five and refuses a translation, half a sheet and a rewritten chorus; on the page, the measurement
+is called before the model, a source song is guarded out of the model, the offset path reads the
+same song and its bytes, the word path accepts a song with no file but a read, the nudge is keyed
+by the sheet id, the read is kept and cleared with its id, and a landing read asks for the timing
+again. All 10 inline scripts parse, the page and the shell cache are 85.3.15, and the notes entry
+is above 85.3.14 and carries no word the Play channel filters. The 85.3.14 (**38**), 85.3.13
+(**37**), 85.3.12 (**33**), 85.3.11 (**22**), 85.3.10 (**32**), 85.3.9 (**46**), 85.3.8 (**57**),
+85.3.7 (**66**) and 85.3.6 (**74**) sets still pass. Both OTA channels rebuilt to a fixed point
+and verify with `--check`.
+
+Not checked: **no phone and no song was listened to.** What is proven is which song is measured,
+which bytes are read, what is asked first and what the words check accepts - not that a particular
+sheet now moves with a particular take on a particular phone. The measurement maths it now calls
+was not re-proven here (this gate stubs `scTimeLyricsFromOnsets`); its own release covered it. A
+source song whose bytes are never read - a plain link played without the app reading it, which is
+the failure path rather than the normal one - still has nothing to measure and keeps the syllable
+layout, and such a song is never handed to the model. Decoding a song that is still being read
+costs one decode of the bytes already in memory; on a long file that is a second of work while the
+sheet is open, and it happens once per sheet.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1334298 bytes**, `ota-play/updates.json` **1334314 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.14 (November 24, 2026): the film is this song, all of it - the title has to name the track, and a teaser is not the video
 
 **The owner's report**: "it has to display the whole video and the correct fucking video with
