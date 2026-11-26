@@ -2735,6 +2735,14 @@ body.sc-dock-pill .action-strip > .action-pill.sc-dock-hot{
 }
 body.sc-dock-pill #playlistsHalf.sc-dock-hot span, body.sc-dock-pill #albumsHalf.sc-dock-hot span,
 body.sc-dock-pill #studioHalf.sc-dock-hot span, body.sc-dock-pill #toolsHalf.sc-dock-hot span{ color: var(--ink) !important; }
+/* 85.3.22 - THE HALF YOU ARE IN READS ON THE HIGHLIGHT. The half's own label was
+   painted coral while the highlight under it is a coral-tinted fill, so the word
+   telling you where you are was the least readable thing in the dock. On the
+   pulley the label is the dock's ink, the same colour every other lit tab uses. */
+body.sc-dock-pill #studioBtn #studioHalf.active-half span,
+body.sc-dock-pill #studioBtn #toolsHalf.active-half span,
+body.sc-dock-pill #playlistsHalf.active-half span,
+body.sc-dock-pill #albumsHalf.active-half span{ color: var(--ink) !important; }
 /* The plus is not part of the capsule - it opens a menu rather than going
    somewhere - so it keeps its own fill, its own shape and its own place. */
 body.sc-dock-pill .action-strip > .action-pill.dock-add{
@@ -3533,6 +3541,13 @@ body.sc80-cloud #sc80DockGlide{ display: none; }
 #studioHalf.active-half, #toolsHalf.active-half{ background: transparent !important; }
 #studioHalf.active-half span, #toolsHalf.active-half span{ color: var(--coral) !important; font-weight: 700; }
 #studioHalf.active-half, #toolsHalf.active-half{ box-shadow: inset 0 0 12px -4px var(--coral); }
+/* 85.3.22 - A FILLED TAB WEARS THE READING COLOUR ON ITS LABELS. When Studio is the
+   tab you are on, the whole tile is filled with the theme's accent (#studioBtn.active),
+   and both halves then painted their words IN that accent: "Studio" and "Tools" were
+   coral on coral, which is why the split tab looked like an empty coloured block. The
+   pair the play button and the rail's mark use is the readable one. */
+#studioBtn.active #studioHalf span, #studioBtn.active #toolsHalf span{ color: var(--on-coral) !important; }
+#studioBtn.active #studioHalf.active-half span, #studioBtn.active #toolsHalf.active-half span{ color: var(--on-coral) !important; }
 
 /* The milestones card and the look card are the same card the rest of Studio
    uses, so nothing here invents a new visual language. */
@@ -14280,6 +14295,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   var SC_ONSET_HOP = 0.02;      // 20ms frames
   var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds
   var SC_ENTRANCE_STREAM = 4;   // articulations in the second that make an attack part of the voice
+  // 85.3.21 - a film under this share of the song is a clip, not this song's video (the same
+  // line the video tab draws for a teaser, SC_VQ_FULL_SHARE - kept here as its own constant
+  // because the sheet and the viewer are two scopes).
+  var SC_LYRIC_FILM_SHARE = 0.5;
 
   // Syllable/beat count. CJK, kana, Hangul and Thai (and other abugidas)
   // carry one sound per written character - every character is its own beat,
@@ -15056,6 +15075,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // path never pays twice for the same track, while the button (which is not
   // silent) can always retry a failed attempt.
   var scAiTimedTracks = {};
+  // 85.3.20 - one automatic AI ask per SHEET per session, whatever it answers. The map
+  // above is cleared when an attempt fails so the button can always retry - which meant a
+  // silent pass whose answer was refused was asked again on every repaint.
+  var scAiTriedAuto = {};
   // One attempt per piece of text. A timing we just generated could itself look
   // evenly spaced (every line the same length measured the same way), and the
   // re-measure it would trigger would decode the same file to the same answer.
@@ -15116,8 +15139,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // a model that cannot hear it is the only thing left to ask.
       var src = await scLyricAudioSource();
       var lrc = src ? await scSyncLyricsFromAudio(src, currentLyricsText) : null;
-      if(!lrc && _aiGeminiKey && !t.stream && !scAiTimedTracks[tid]){
-        var _aiOk = await aiSyncLyrics(true);
+      // 85.3.20 - the model is the fallback when there is nothing to measure, and it is
+      // asked at most once per sheet per session (scAiTriedAuto, which the sheet's own
+      // pass in showLyrics shares). It reaches a song from the source too now: the ask
+      // resolves the sheet's own song and the bytes it has.
+      if(!lrc && _aiGeminiKey && !t.stream && !scAiTimedTracks[tid] && !scAiTriedAuto[tid]){
+        scAiTriedAuto[tid] = 1;
+        var _aiOk = await aiSyncLyrics(true, true);
         if(_aiOk){ toast('Lyrics timed to this song by AI', 2200); return true; }
       }
       if(!lrc){
@@ -15226,23 +15254,56 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     // songs already carrying the old guess get the measured one.
     // 73.1.3 - a timing the user pinned by hand is never re-measured. Their taps
     // outrank every guess this app can make.
+    //
+    // 85.3.20 - WITH A GEMINI KEY SET, THE MODEL HEARS THE RECORDING FIRST.
+    //
+    // 85.3.15 put the measurement in front of the model on the argument that a model that
+    // cannot hear the song is guessing while the recording never does. The owner's report
+    // is the other half of it: "this lyrics is soo friken off not even close to where it
+    // actually is fix that ... with ai gemini key". The measurement lays the lines out by
+    // how much singing each holds and then pulls each one at most SC_ONSET_PULL onto a rise
+    // nearby - so on a song whose chorus comes back faster, whose verses are not the same
+    // length as their words, or whose sheet is for another cut, it is still a share of the
+    // song. A share is not even close by the last verse. The model is handed the audio
+    // itself (73.1.3), so it can place each line against the voice it can hear - including
+    // on a sheet that already carried stamps from a database that had a different cut.
+    //
+    // So: a key set, this song has not been asked this session -> the model times the sheet
+    // on screen, stamped or not (`force`), and its answer is still filtered by every guard
+    // 73.1.5 and 85.3.15 added: the words come back word for word, an even split is
+    // refused, and the rows are pulled clear of the measured breaks and snapped onto the
+    // recording. If it declines or fails, the old behaviour stands exactly as it was -
+    // measure an untimed sheet, nudge a stamped one. And the AI and the measurement are
+    // each asked at most once per sheet per session (scAiTriedAuto), so a refused answer
+    // is not asked for again on every repaint.
     var _aligned = false;
     try{ _aligned = scLyricsAlignedNow(); }catch(_eAligned){}
     if(!_aligned && lyrics && lyrics.trim()){
       var _hasStamps = /\[\d{1,2}:\d{2}/.test(lyrics);
-      if(!_hasStamps || scLyricsLookEvenlySpaced(lyrics)){
+      var _evenSplit = _hasStamps ? scLyricsLookEvenlySpaced(lyrics) : false;
+      var _askSheet = '';
+      try{ _askSheet = scLyricSheetId(); }catch(_eAskSid){ _askSheet = ''; }
+      if(!_askSheet){ try{ if(queueIndex >= 0 && queueIndex < queue.length) _askSheet = String(queue[queueIndex]); }catch(_eAskQ){ _askSheet = ''; } }
+      var _fallbackTime = function(){
+        if(!_hasStamps || _evenSplit){
+          try{ scAutoTimeCurrentLyrics(); }catch(_eAutoTimeCall){}
+        } else {
+          // 74.1.9 - a sheet WITH stamps is not a sheet in sync with this file. The
+          // recording is asked how far out it is and the answer becomes the song's
+          // nudge; a sheet that is simply right is left alone by the same measurement.
+          try{ scAutoAlignLyricsToAudio(); }catch(_eAlignCall){}
+        }
+      };
+      if(_aiGeminiKey && _askSheet && !scAiTriedAuto[_askSheet]){
+        scAiTriedAuto[_askSheet] = 1;
         try{
-          scAutoTimeCurrentLyrics().then(function(timed){
-            if(!timed && !_hasStamps && _aiGeminiKey){
-              if(!scAiTimedTracks[String(queue[queueIndex])]){ try{ aiSyncLyrics(true); }catch(_eAi){} }
-            }
-          });
-        }catch(_eAutoTimeCall){}
+          aiSyncLyrics(true, true).then(function(timed){
+            if(timed){ try{ toast('Lyrics timed to this recording by AI', 2200); }catch(_eAiToast){} return; }
+            _fallbackTime();
+          }, function(){ _fallbackTime(); });
+        }catch(_eAiAsk){ _fallbackTime(); }
       } else {
-        // 74.1.9 - a sheet WITH stamps is not a sheet in sync with this file. The
-        // recording is asked how far out it is and the answer becomes the song's
-        // nudge; a sheet that is simply right is left alone by the same measurement.
-        try{ scAutoAlignLyricsToAudio(); }catch(_eAlignCall){}
+        _fallbackTime();
       }
     }
 
@@ -15407,19 +15468,36 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
 
   // ---- AI Sync: use Gemini to generate timestamps for unsynced lyrics ----
-  async function aiSyncLyrics(silent) {
+  // 85.3.20 - THE MODEL IS ASKED ABOUT THE SHEET ON THE SCREEN, AND IT MAY RE-TIME ONE THAT
+  // ALREADY HAS STAMPS.
+  //
+  // Two faults made the key useless on exactly the sheet the owner reported. The song was
+  // looked up in the QUEUE (allTracks by queue[queueIndex]), so a sheet opened on a song
+  // from the source had no track at all - "No track info." - and the recording came from
+  // `t.file`, which such a song does not have. And the door refused any sheet that already
+  // carried stamps ("Lyrics are already synced"), which is every sheet a lyrics database
+  // hands over timed: a wrong timing could never be corrected by the one thing that can
+  // hear the recording. `force` is the caller saying "this timing is wrong, time it again"
+  // - the button now always says it for such a sheet, and the sheet's own pass says it
+  // once per song when a key is set.
+  async function aiSyncLyrics(silent, force) {
     if (!_aiGeminiKey) { if(!silent) toast("Add a Gemini API key in Settings to use AI Sync."); return; }
     var audio = activeAudio();
     if (!audio) { if(!silent) toast("No song playing."); return; }
-    var t = allTracks.find(function(tr) { return tr.id === queue[queueIndex]; });
+    // 85.3.20 - THE SHEET'S OWN SONG FIRST (85.3.15's scLyricSong), the queue only as a
+    // fallback: a song played from the source is not in the library at all.
+    var t = null;
+    try{ t = (typeof scLyricSong === 'function') ? scLyricSong() : null; }catch(_eAiSong){ t = null; }
+    if (!t) t = allTracks.find(function(tr) { return tr.id === queue[queueIndex]; });
     if (!t) { if(!silent) toast("No track info."); return; }
+    var _aiSid = String(t.id);
     var rawLyrics = currentLyricsText || "";
     if (!rawLyrics.trim()) { if(!silent) toast("No lyrics to sync."); return; }
-    if (currentLyricsSynced && !scLyricsLookEvenlySpaced(rawLyrics) && /\[\d{1,2}:\d{2}/.test(rawLyrics)) { if(!silent) toast("Lyrics are already synced."); return false; }
+    if (!force && currentLyricsSynced && !scLyricsLookEvenlySpaced(rawLyrics) && /\[\d{1,2}:\d{2}/.test(rawLyrics)) { if(!silent) toast("Lyrics are already synced."); return false; }
     // 73.1.4 - the automatic path asks the model once per song per session; the
     // button (not silent) always runs, so a failed attempt can be retried.
-    if(silent && scAiTimedTracks[String(t.id)]) { return false; }
-    scAiTimedTracks[String(t.id)] = true;
+    if(silent && scAiTimedTracks[_aiSid]) { return false; }
+    scAiTimedTracks[_aiSid] = true;
     var duration = audio.duration || t.duration || 180;
     var btn = $("lyricsAiSyncBtn");
     if (btn) { btn.textContent = "AI Syncing..."; btn.disabled = true; }
@@ -15431,13 +15509,20 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // while it fits under the API's body ceiling; past that the text-only ask
       // stays, rather than failing the sync outright.
       var audioPart = null;
+      var _arr = null;
       try{
-        if(t.file){
-          var _arr = await blobToArrayBufferFallbackCrop(t.file);
+        // 85.3.20 - WHICHEVER BYTES THIS SONG HAS. A library song hands its own file; a
+        // song from the source hands the read the player already made, which is the same
+        // audio its blob address is playing (85.3.15's scLyricAudioSource). Reading only
+        // `t.file` handed the model no recording at all for exactly those songs.
+        var _aiSrc = (typeof scLyricAudioSource === 'function') ? await scLyricAudioSource() : null;
+        var _aiBlob = (_aiSrc && _aiSrc.blob) ? _aiSrc.blob : (t.file || null);
+        if(_aiBlob && _aiBlob.size){
+          _arr = await blobToArrayBufferFallbackCrop(_aiBlob);
           if(_arr && _arr.byteLength){
             var _b64 = scBytesToBase64(_arr);
             if(_b64.length <= 18000000){
-              var _mime = (t.file && t.file.type) || t.mime || "audio/mpeg";
+              var _mime = (_aiBlob && _aiBlob.type) || t.mime || "audio/mpeg";
               if(!/^audio\//.test(_mime)) _mime = "audio/mpeg";
               audioPart = { inline_data: { mime_type: _mime, data: _b64 } };
             }
@@ -15462,12 +15547,26 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       }catch(_eEnv){ _aiEnv = null; }
       var _gaps = [];
       try{ if(_aiEnv) _gaps = scFindQuietGaps(_aiEnv, SC_ONSET_HOP, duration); }catch(_eGaps){ _gaps = []; }
+      // 85.3.20 - NO RECORDING, NO ASK. A song from the source is still being read when
+      // its sheet opens, and a model asked without the audio can only guess - which is the
+      // "the rhythm changes with AI" report 85.3.15 was written for. The read landing calls
+      // scLyricKickMeasure(), so the guess is not needed then either.
+      if(!audioPart && t.stream){
+        delete scAiTimedTracks[_aiSid];
+        if(!silent) toast("This song's audio is still loading \u2014 try AI Sync in a moment.", 2600);
+        return false;
+      }
 
       // 73.1.5 - the model is told exactly how many lines to time, in order, so it
       // cannot quietly drop one, and the first line is placed where the singing
       // actually starts instead of at a pinned 00:01 - a musical intro is exactly
       // why a timing used to sit a bar behind the voice.
-      var _plainLines = String(rawLyrics).split(String.fromCharCode(10)).map(function(s){ return String(s).replace(/^[\s\u00A0]+|[\s\u00A0]+$/g, ""); }).filter(function(s){ return s.length > 0; });
+      // 85.3.20 - THE OLD TIMES ARE NOT PART OF THE WORDS. A sheet that already carries
+      // stamps was handed to the model WITH them ("1. [00:12.34]line"), which is a timing
+      // to agree with rather than a line to place - the one thing a re-time must not be
+      // given. The stamps are stripped here, before the words are numbered; the sheet
+      // itself keeps them until the new timing replaces it.
+      var _plainLines = String(rawLyrics).split(String.fromCharCode(10)).map(function(s){ return String(scStripLrcStamps(s)).replace(/^[\s\u00A0]+|[\s\u00A0]+$/g, ""); }).filter(function(s){ return s.length > 0; });
       var _numbered = _plainLines.map(function(s, i){ return (i + 1) + ". " + s; }).join(String.fromCharCode(10));
       var prompt = "You are a lyrics synchronization engine. Time every line of the lyrics below to the recording.\n\n";
       if(audioPart) prompt += "The song's audio recording is attached. Listen to it and place each line on the exact moment it is sung.\n\n";
@@ -15519,19 +15618,19 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           if(scRowsLookSane(_rows2, duration) && _rows2.length >= _rows.length){ text = _text2; _rows = _rows2; }
         }catch(_eFix){}
       }
-      if (!/\[\d{1,2}:\d{2}/.test(text)) { if(!silent) toast("AI could not generate valid timestamps."); delete scAiTimedTracks[String(t.id)]; return; }
+      if (!/\[\d{1,2}:\d{2}/.test(text)) { if(!silent) toast("AI could not generate valid timestamps."); delete scAiTimedTracks[_aiSid]; return; }
       // 73.1.5 - the model ignored the no-even-split rule: the measured layout
       // follows the words, so take that instead of a length count dressed up.
       if(scLyricsLookEvenlySpaced(text)){
         if(!silent) toast("The AI returned an even split — timing from the recording instead.", 3400);
-        delete scAiTimedTracks[String(t.id)];
+        delete scAiTimedTracks[_aiSid];
         return false;
       }
       // 85.3.15 - a timing may not change the words. If the model rewrote, translated
       // or dropped lines, this sheet is refused and the song keeps its own text.
       if(!scLyricRowsMatchSheet(_rows, _plainLines)){
         if(!silent) toast("The AI changed the words — keeping this song's own lyrics.", 3400);
-        delete scAiTimedTracks[String(t.id)];
+        delete scAiTimedTracks[_aiSid];
         return false;
       }
       // 73.1.6 - the model names the line, the recording says the time. Pull any
@@ -15543,19 +15642,26 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         var _snap = scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps);
         if(scRowsLookSane(_snap, duration)) text = scFormatLrcRows(_snap);
       }
-      var stillId = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      if(String(stillId) !== String(t.id) || lyricsCurrentTrack !== t.id) return false;
+      // 85.3.20 - the sheet's own song is what has to still be on screen, and the timing
+      // is written to the store that song belongs to (85.3.15's scLyricsPersist), so a song
+      // from the source keeps the timing too.
+      var stillId = '';
+      try{ var _stillSong = (typeof scLyricSong === 'function') ? scLyricSong() : null; stillId = _stillSong ? String(_stillSong.id) : ''; }catch(_eAiStill){ stillId = ''; }
+      if(stillId !== _aiSid || String(lyricsCurrentTrack) !== _aiSid) return false;
       t.lyrics = text;
       t.lyricsSynced = true;
-      // Same as the measured path above: the song record is what stores a timing.
-      try{ persistTrackMeta(t); }catch(_ePersistAiTiming){}
+      // A new line timing makes the word timing measured against the old one stale: the
+      // words are paced inside the windows these new stamps draw.
+      try{ delete scWordTimes[_aiSid]; }catch(_eWordDrop){}
+      try{ dbPut('meta', { key: 'lyricWords_' + _aiSid, value: null }); }catch(_eWordDropDb){}
+      try{ scLyricsPersist(t); }catch(_ePersistAiTiming){}
       currentLyricsText = text;
       currentLyricsSynced = true;
       showLyrics(text, true, true);
       if(!silent) toast("AI Sync complete! Lyrics are now time-aligned.");
       return true;
     } catch (e) {
-      delete scAiTimedTracks[String(t.id)];
+      delete scAiTimedTracks[_aiSid];
       console.error("AI Sync failed:", e);
       if(!silent) toast("AI Sync failed: " + (e.message || "Unknown error"));
     } finally {
@@ -15583,10 +15689,42 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // on - the words have to follow the picture's second, not a stopped deck. A paused
   // song is still a stopped clock (the highlight stops with the audio), and the film
   // being paused is the same answer.
+  // 85.3.21 - HOW LONG THE SONG IS, for the one question a film's clock has to answer:
+  // is this film the whole song, or a minute of it? Read the way the sheet already reads
+  // its own length - the song on the sheet, the source's record, then the element that is
+  // playing - so a song whose row never carried a duration is still measured.
+  function scLyricSongLen(){
+    var d = 0;
+    try{ var t = scLyricSong(); if(t) d = Number(t.duration) || Number(t.dur) || Number(t.length) || 0; }catch(_eLenT){ d = 0; }
+    if(!(d > 0)){
+      try{ var s = (typeof scStreamSong === 'function') ? scStreamSong() : null; d = s ? (Number(s.duration) || 0) : 0; }catch(_eLenS){ d = 0; }
+    }
+    if(!(d > 0)){
+      try{ var a = (typeof activeAudio === 'function') ? activeAudio() : null; if(a && isFinite(a.duration)) d = Number(a.duration) || 0; }catch(_eLenA){ d = 0; }
+    }
+    return d > 0 ? d : 0;
+  }
+
   function scLyricsClock(){
     try{
       var vc = (typeof window.__scVideoClock === 'function') ? window.__scVideoClock() : null;
-      if(vc) return { audio: null, time: Number(vc.time) || 0, dur: Number(vc.dur) || 0, video: true };
+      // 85.3.21 - A MINUTE OF THE SONG IS NOT THE SONG'S CLOCK.
+      //
+      // The film is the sheet's clock while the film is what is sounding (85.3.6), and that
+      // is right when the film IS the song. A film much shorter than the song is not: it is
+      // a teaser, a short, or a cut of the intro, and its clock stops where the song still
+      // has minutes to go - the sheet froze on one line and every verse after it was never
+      // lit. That is the report, "the lyrics keep stopping at one minute" - and the video tab
+      // was playing a 0:57 clip for a song that runs three minutes. A film under half the
+      // song no longer clocks the sheet; the song under it does, and the clip's own end hands
+      // the sound back to the song (scVideoSync) so the words keep coming to the last verse.
+      if(vc){
+        var _filmLen = Number(vc.dur) || 0;
+        var _songLen = 0;
+        try{ _songLen = scLyricSongLen(); }catch(_eLen){ _songLen = 0; }
+        if(!(_filmLen > 0) || !(_songLen > 0) || _filmLen >= _songLen * SC_LYRIC_FILM_SHARE)
+          return { audio: null, time: Number(vc.time) || 0, dur: Number(vc.dur) || 0, video: true };
+      }
     }catch(_eClockV){}
     var a = null;
     try{ a = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio(); }catch(_eClockA){ a = null; }
@@ -20208,6 +20346,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
+    // 85.3.21 - one search for a full-length film per song (`clipTried`). A film that came
+    // back shorter than half the song is a teaser, and it is never played as the video: the
+    // search gets one ask, and then the song simply plays on without a picture.
+    clipTried: 0,
     pendingKey: '', lastLoad: 0, voice: null,
     fxOn: false, fxRaf: 0, fxPainted: 0,
     // 85.3.6 - the hand-off while the app is away, and the AI-tuned upscale.
@@ -22864,6 +23006,33 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoClock();
       return;
     }
+    // 85.3.21 - A CLIP THAT RAN OUT IS THE SONG'S TURN.
+    //
+    // The film owns the sound while it is up, so the song is paused underneath it (one sound
+    // at a time). When the film is a minute of a three-minute song, the picture ends and
+    // NOTHING is left sounding: the app sat on the clip's last frame for the rest of the
+    // song and the lyrics froze with it. A picture well short of the song now ends by giving
+    // the sound back - the song is started again from the second it was held - so the song,
+    // and the sheet that follows it, play to their own end. This is the net under a film
+    // whose length the player did not report, which is the one case scVideoLoad cannot see
+    // before the picture is on the screen.
+    if(scVideoState.owns && !scVideoState.hold &&
+       (scVideoState.audioMode === 'aux' || scVideoState.audioMode === 'video')){
+      var _clipLen = (isFinite(v.duration) && v.duration > 0) ? Number(v.duration) : 0;
+      var _songLen = 0;
+      try{ _songLen = scVideoSongLen(); }catch(_eClipLen){ _songLen = 0; }
+      var _clipOver = !!v.ended || (_clipLen > 0 && (Number(v.currentTime) || 0) >= (_clipLen - 0.35));
+      if(_clipLen > 0 && _songLen > 0 && _clipLen < _songLen * SC_VQ_FULL_SHARE && _clipOver){
+        scVideoOwnSound(false);
+        scVideoState.audioMode = 'song';
+        scVideoState.hold = false;
+        scVideoAuxPause();
+        scVideoFoot('That was a ' + scVideoMMSS(_clipLen) + ' clip of this song - the song carries on.');
+        scVideoSong(true);
+        scVideoClock();
+        return;
+      }
+    }
     scVideoState.filmPlaying = v.paused ? 0 : 1;
     // HOW MANY FRAMES A SECOND THIS PHONE IS REALLY SHOWING. Measured on the film's own
     // element while it runs, and it is what decides whether a size is a picture or a
@@ -23419,16 +23588,43 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var songLen = scVideoSongLen();
       var far = !!(cand.own && songLen > 0 && scVideoState.vidLen > 0 &&
                    Math.abs(scVideoState.vidLen - songLen) > Math.max(20, songLen * 0.1));
-      if(!far || scVideoState.wrongTried) return apply();
-      scVideoState.wrongTried = true;
+      // 85.3.21 - A MINUTE OF THIS SONG IS NOT THIS SONG'S VIDEO.
+      //
+      // The player says how long the film it answered with is; the song says how long it is.
+      // A film under half the song (85.3.14's SC_VQ_FULL_SHARE) is a teaser, a short, or a
+      // cut of the intro - and it was still played whenever the search came back with
+      // nothing better, with the song PAUSED underneath it because the film carried the
+      // sound. The whole app then stopped at the clip's last second: that is "the lyrics
+      // keep stopping at one minute, for the twelfth time". Such a film is not attached at
+      // all now. It gets one search for the song's full cut; when there is none, the song is
+      // the sound and the cover is the picture (scVideoNoVideo), so the song - and the sheet
+      // that follows it - run their whole length instead of a minute of somebody's teaser.
+      var shortFilm = !!(songLen > 0 && scVideoState.vidLen > 0 && scVideoState.vidLen < songLen * SC_VQ_FULL_SHARE);
       var offNote = 'That clip runs ' + scVideoMMSS(scVideoState.vidLen) + ' for a ' +
         scVideoMMSS(songLen) + ' song';
+      var noFullFilm = function(){
+        scVideoSpin(false);
+        scVideoNoVideo(scVideoTrack() || scVideoState.last,
+          offNote + ' - no full video of this song was found, so the song plays on.');
+        return false;
+      };
+      if(shortFilm){
+        if(scVideoState.clipTried) return noFullFilm();
+        scVideoState.clipTried = 1;
+      } else if(!far || scVideoState.wrongTried){
+        return apply();
+      } else {
+        scVideoState.wrongTried = true;
+      }
       scVideoFoot(offNote + ' - looking for the right one.');
       // THE SONG THAT IS ON NOW, not the one this tab was opened for: a search run
       // with a stale title is how one song's clip arrives under another's name.
       return scVideoSearch(scVideoTrack() || scVideoState.last).then(function(list){
         if(seq !== scVideoState.loadSeq) return false;
         if(!list || !list.length){
+          // NOTHING LONGER WAS FOUND. A different recording played short is still a film
+          // (85.3.14's own trade); a CLIP is not a film at all, so the song keeps the sound.
+          if(shortFilm) return noFullFilm();
           scVideoFoot(offNote + ', and the search found nothing better.');
           return apply();
         }
@@ -23476,6 +23672,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoCoverHide();
     var other = scVideoEl('scVideoNext');
     scVideoState.wrongTried = false;
+    scVideoState.clipTried = 0;      // 85.3.21 - one look for a full-length film per song
     if(t.videoId){
       // `own` marks the clip the catalogue handed over: it is the one that has to
       // prove it is this song, because nothing else chose it.
@@ -24894,7 +25091,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.19';
+  const APP_VERSION = '85.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25604,6 +25801,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.4', date: 'November 26, 2026', title: 'The words follow the voice, the film is the whole song, and the split Studio tab reads on the tab you are on', items: [
+      'With a Gemini key set, the lyrics are timed from the recording itself: the song\u2019s own audio goes with the request, so each line is placed against the voice singing it instead of against a share of the song\u2019s length. A sheet that already arrived with timestamps can be timed again, and the old ones are no longer sent to the model with the words.',
+      'The song whose lyrics are open is the song that gets timed, whichever list it came from: a song played straight from a search used to answer \u201cNo track info.\u201d and could never use the key.',
+      'The words still outrank the model: a timing that rewrites, translates, drops or evenly spaces the lines is refused, a line put inside an instrumental break is pulled back to where the voice resumes, and every stamp is snapped onto a real rise in the recording.',
+      'A music video that runs shorter than half the song is never played as the video any more. A teaser, a short or a cut of the intro used to be attached whenever the search found nothing better \u2014 and because the film carried the sound, the song was paused underneath it, so everything stopped at the clip\u2019s last second.',
+      'That is why the lyrics kept stopping at one minute: the sheet follows the film\u2019s clock while the film is what is sounding. A clip now gets one search for the song\u2019s full cut, a film that ends while the song has minutes left hands the sound back to the song, and the sheet will not take a clock shorter than the song \u2014 so the words run to the last verse.',
+      'The split Studio/Tools tab is readable on the tab you are on: both names are painted in the readable on-accent colour instead of the accent colour that fills the tile.',
+      'In the pill dock the sliding highlight takes the split tab\u2019s own corner instead of the capsule\u2019s curve, so \u201cTools\u201d and \u201cStudio\u201d stay inside the highlight, and the half you are in reads in the dock\u2019s own ink.'
+    ] },
     { version: '85.3.19', date: 'November 26, 2026', title: 'A tap on the film only opens the controls, the size you pick is the size you keep, and the video plays to its own end', items: [
       'A tap on the picture only brings the mini bar back. Play and pause belong to the round button and the big button over a still, so looking at the film can never stop it.',
       'The music video opens on FULL HD unless another size has been chosen, and a size picked by hand is never taken away: the tab may say the picture is short of frames, but it leaves it on the size that was asked for.',
@@ -53794,6 +54000,14 @@ function _renderAhFromData(artistAlbums){
       // A half of the split Library tab wears the diagonal; every other pill is its
       // own rounded box and needs no clip at all.
       e.thumb.style.clipPath = b.half ? scDockDividerPoly(b) : '';
+      // 85.3.22 - THE SPLIT TAB'S HIGHLIGHT IS A ROUNDED RECT, NOT A CAPSULE. The
+      // highlight is a 999px capsule, and a split tab keeps its two names in its own
+      // CORNERS - so over the Studio/Tools tab the capsule's curve ran through the
+      // corner the name sits in and "Tools" (or "Studio") was painted outside the
+      // highlight, hanging in the dock on its own. On a split tab the highlight now
+      // takes the tab's own 14px corner, the way the filled tab does, and every name
+      // stays inside the shape that says which one is on.
+      try{ e.thumb.style.borderRadius = b.half ? '14px' : ''; }catch(_eThR){}
       // No divider is placed here any more: each split tab draws its own cut inside
       // the button, so the dock has no second line to lay down and nothing that can
       // go stale between a layout change and the next sync.

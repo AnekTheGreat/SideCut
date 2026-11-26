@@ -338,8 +338,11 @@ const adaptiveOnly = [
     while ((m = re.exec(page))) { scripts++; try { new Function(m[1]); } catch (e) { bad++; console.log('    ' + e.message); } }
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
   }
-  const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok('the page is on a version at or above 85.3.7', /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 7, vPage);
+  // The version pin reads "this release or newer" through dev/version.cjs, because a version
+// here is two numbers and a third that only runs 0-9 (85.3.9 -> 85.4), never 85.3.10.
+const { atLeast } = require('./version.cjs');
+const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+  ok('the page is on a version at or above 85.3.7', atLeast(vPage, '85.3.7'), vPage);
   ok('the shell cache is on the same version', sw.includes("sidecut-shell-v" + vPage), vPage);
   ok('the notes carry the 85.3.7 entry', page.includes("version: '85.3.7'"));
   ok('the 85.3.7 entry is above 85.3.6', page.indexOf("version: '85.3.7'") < page.indexOf("version: '85.3.6'"));

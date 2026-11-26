@@ -88,6 +88,10 @@ function harness(opts) {
     scAutoTimeFailedAt: 0,
     SC_AUTOTIME_RETRY_MS: 20000,
     scAutoSyncBusy: {},
+    // 85.3.20 - the automatic pass records that it has asked the model, whatever the
+    // answer, so a refused ask is not repeated on every repaint. The page declares it
+    // beside scAiTimedTracks; this release's unit needs it in scope.
+    scAiTriedAuto: {},
     scStreamState: o.streamState || {},
     scStreamSong: o.streamSong || function () { return null; },
     SC_ONSET_HOP: 0.02,
@@ -305,11 +309,14 @@ function releaseChecks() {
   let m, scripts = 0, bad = 0;
   while ((m = re.exec(page))) { scripts++; try { new Function(m[1]); } catch (e) { bad++; console.log('    ' + e.message); } }
   ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
-  const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+  // The version pin reads "this release or newer" through dev/version.cjs, because a version
+// here is two numbers and a third that only runs 0-9 (85.3.9 -> 85.4), never 85.3.10.
+const { atLeast } = require('./version.cjs');
+const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
   // Relaxed by 85.3.16 - the lyric contract this gate proves has not changed since, and a
   // later page number is not a regression in it.
   ok('the page is on 85.3.15 or newer',
-    /^85\.3\.\d+$/.test(vPage) && Number(vPage.split('.')[2]) >= 15, vPage);
+    atLeast(vPage, '85.3.15'), vPage);
   ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
   ok('the notes carry the 85.3.15 entry', page.includes("version: '85.3.15'"));
   ok('the new entry is above 85.3.14', page.indexOf("version: '85.3.15'") < page.indexOf("version: '85.3.14'"));

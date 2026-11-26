@@ -1,5 +1,320 @@
 # SideCut — repository memory
 
+## VERSION NUMBERS — READ THIS FIRST, EVERY RELEASE
+
+**A version is two numbers, and a third one only ever runs 0-9.** After `85.0.9` the next release is
+**`85.1`** — never `85.0.10`. There is no `85.3.10`, no `85.3.20`, no `85.1.20`. The owner has asked
+for this more than once and does not want to ask again: a third segment that rolls over to two
+digits is the mistake, not a style choice.
+
+The sequence is `85.0`, `85.0.1` … `85.0.9`, `85.1`, `85.1.1` … `85.1.9`, `85.2`, … `85.3.9`, then
+**`85.4`**. When a patch number would need a second digit, increment the middle number and drop the
+third: `85.3.9` → `85.4`, and `85.4.9` → `85.5`. `APP_VERSION`, the `sw.js` shell cache, the notes
+entry, the gate that pins it and this file all carry that same string.
+
+This bit us on 2026-11-26: the releases below were written as `85.3.10` … `85.3.22`, which is
+against the rule. The eleven already published under those numbers stay as they are `--` rewriting a
+shipped release's number would make two builds claim one version `--` but everything from `85.4` on
+follows the rule above, and any unpublished work is rolled into the next legal number instead of
+getting a made-up label.
+
+## 85.4 (November 26, 2026): the words follow the voice, the film is the whole song, and the split Studio tab reads
+
+Three pieces of work that were built under the rolled-over labels `85.3.20`, `85.3.21` and
+`85.3.22` and were never pushed: they ship together as **`85.4`**, the version after `85.3.9`
+under the rule above. The three sections below keep the working labels in their own prose (the
+gates are still named `dev/check-85320.cjs`, `-85321`, `-85322`) and each still stands on its own
+investigation; the release is one number and one notes entry in the page.
+
+### What was checked for the release as a whole
+
+Checked: the three gates that carry this work pass - `dev/check-85322.cjs` **25**, `dev/check-85321.cjs`
+**43**, `dev/check-85320.cjs` **61** - and every earlier gate still passes after the numbering change:
+85.3.19 **49**, 85.3.18 **66**, 85.3.17 **45**, 85.3.16 **60**, 85.3.15 **63**, 85.3.14 **38**,
+85.3.13 **37**, 85.3.12 **32**, 85.3.11 **22**, 85.3.10 **32**, 85.3.9 **46**, 85.3.8 **57**,
+85.3.7 **66**, 85.3.6 **75**, 85.3.4 **243**, 85.3.3 **235**, 85.3.2 **213** and the 85.3.0/85.3.1
+**204** sets. **The roll-over cost twelve edits and it is worth knowing why**: eleven gates asked
+"this release or newer" by testing that the first two parts are `85.3` and the third is a number at
+or above a threshold - which is false the moment the third part stops existing, so every one of
+them went red on `85.4`. They now compare through the new `dev/version.cjs`: `atLeast('85.4',
+'85.3.19')` is true because 4 is greater than 3, so the next roll-over costs nothing. The page and
+the shell cache are `85.4`, the notes carry one `85.4` entry above `85.3.19`, and it carries no word
+the Play channel filters. Both OTA channels rebuilt to a fixed point
+(`1349515 -> 1348922 -> 1349715 -> 1349715`) and verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1349715 bytes**, `ota-play/updates.json` **1349730 bytes**. Page-only: no native change, so the
+APK is not rebuilt.
+
+Not checked: the same limits as the three sections below - no phone, no song played, no film
+watched. The dock was rendered in a Chromium build of the real page at 412x915, and that paint is
+what ships.
+
+### The split Studio tab is readable on the tab you are on, in both docks
+
+**The owner's report**: "it looks so good on dev version the tabs but so shit on regular
+version fix that", with two screenshots of the SAME dock: one where the Studio/Tools tile was a
+solid coloured block with both names legible, and one where the highlight was a capsule, "Tools"
+hung outside it in the dock, and the word telling him where he was was the least readable thing
+on the screen. Everything else in the two screenshots is identical (header, now bar, page
+chrome), and the dock is one markup with two modes - the **pill dock** (one capsule, one sliding
+highlight, `sidecut_dockPill`, on unless it has been switched off in Studio → Gestures) and the
+plain one. The two "versions" in the report are those two modes, and each had its own fault.
+
+**THE FILLED TAB PAINTED ITS OWN NAMES IN THE COLOUR THAT FILLS IT.** `#studioBtn.active` fills
+the tile with `var(--coral)`, and `#studioHalf.active-half span` forced `color: var(--coral)
+!important` - the "which half am I in" mark - so on the tab that was actually open both names
+were coral on coral. The screenshot is a coloured block with no words in it, which is exactly
+what that rule asks for. A filled tab now wears `var(--on-coral)` - the readable pair the play
+button and 85.3.17's rail mark use, and a variable the theme writer already sets (`applyTheme`
+falls back to `#fff`). The accent mark is still what an UNFILLED half wears: that cue was never
+the problem, it just must not be the one on top.
+
+**AND THE SLIDING HIGHLIGHT WAS A CAPSULE OVER A TAB WHOSE NAMES LIVE IN ITS CORNERS.**
+`#scDockPillThumb` is `border-radius: 999px`, inset 4px inside the tab it sits over. That is
+right for Home, Library and Discover, whose one name is in the middle. A split tab keeps two
+names in its own corners (Library/Albums, Studio/Tools), so the capsule's curve ran through the
+corner the name sits in and the word - "Tools" in the report - was painted OUTSIDE the paint
+that says which tab is on. The highlight now takes the split tab's own 14px corner when it is
+over one (`scDockPillSync` already knows the shape: `b.half`, the same flag that gives it the
+diagonal), and every other tab keeps the capsule. The half you are in also stopped painting its
+name in the accent colour under a highlight that is accent-tinted: it is the dock's own ink
+there, the colour every other lit tab uses (the library halves included).
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85322.cjs` passes **25 assertions, 0 failed**. The stylesheet's own
+strings are asserted (the on-accent rule for a filled split tab, that it comes after the accent
+mark so it wins, the accent mark still present for an unfilled half, `--on-coral` a real
+variable the theme writes), and the highlight is **driven**: `scDockPillSync` is cut out of
+`index.html` and run in a vm, and the radius it actually writes is a 14px rounded rect over a
+split tab and left alone (the capsule) over a plain one, with the diagonal clip kept either
+way. All 10 inline scripts parse, the page and the shell cache are 85.3.22, the notes entry is
+above 85.3.21 and carries no word the Play channel filters. The 85.3.21 (**43**, with its
+version pin relaxed to "85.3.21 or newer" and a note saying so), 85.3.20 (**61**), 85.3.19
+(**49**), 85.3.18 (**66**), 85.3.17 (**45**), 85.3.16 (**60**), 85.3.15 (**63**), 85.3.14
+(**38**), 85.3.13 (**37**), 85.3.12 (**32**), 85.3.11 (**22**), 85.3.10 (**32**), 85.3.9
+(**46**), 85.3.8 (**57**), 85.3.7 (**66**), 85.3.6 (**75**), 85.3.4 (**243**), 85.3.3
+(**235**), 85.3.2 (**213**) and the 85.3.0/85.3.1 (**204**) sets still pass. Both OTA
+channels rebuilt to a fixed point (`1348909 -> 1349925 -> 1349515 -> 1349515`) and verify with
+`--check`.
+
+Looked at, not only asserted: the real page was served and driven in a browser at 412x915, and
+the dock was photographed in all four states - plain dock and pill dock, each with Studio open,
+before and after the change - plus both in the cloud layout. Before: the plain dock showed a
+filled tile with the words coral-on-coral (invisible), and the pill dock showed the capsule with
+"Tools" outside it. After: both show one tile, both names legible, the diagonal intact and the
+active half in the dock's ink.
+
+Not checked: **no phone.** What is proven is the paint the stylesheet asks for and the radius
+the highlight is given, not how a given WebView renders `color-mix` and a `var(--on-coral)`
+theme on a real screen. A theme whose accent is very close to its own reading colour would
+make a filled tab soft; every theme in the app sets the pair the play button already relies on.
+The cloud layout's dock uses the same rules and was rendered, but its staircase places the tile
+by its own measurements, so a future cloud-layout change is the thing to look at if the tile
+steps out of line there again. The reading of "dev version vs regular version" as the two dock
+modes is the report's own evidence (everything else in the two screenshots is the same screen);
+if the two builds really were different installs, this release is still the one that makes the
+tab readable in both docks. Page-only: no native change, so the APK is not rebuilt.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1349515 bytes**, `ota-play/updates.json` **1349529 bytes**.
+
+### The film is the whole song, not a minute of it — and the sheet is never clocked by a clip
+
+**The owner's report**: "why does the lyrics keep stopping at one minute again. for the 12th
+time it should be the full 2,3,4 minutes long however long the video is", with two screenshots
+of the music-video tab whose own bar read **0:48 / 0:57** - a fifty-seven second film under a
+song that runs three minutes. Nothing was wrong with the lyrics module at all: the sheet was
+faithfully following the only clock it had.
+
+**THE FILM WAS A CLIP, AND IT WAS PLAYED ANYWAY.** `scVideoLoad` compared the length the player
+reported for the film (`scVideoState.vidLen`) with the song's (`scVideoSongLen`), but only for
+a catalogue hand-over (`cand.own`), and when the search that followed came back with nothing
+better it called `apply()` and attached the short film. 85.3.14's rule - a clip under half the
+song is a teaser, not the video (`SC_VQ_FULL_SHARE`) - was applied to what the search offered
+and not to what was played. A film under that share is no longer attached at all: it gets one
+search for the song's full cut (`scVideoState.clipTried`, latched per song, so a search result
+that is short too cannot loop), and when there is none `scVideoNoVideo` puts the cover up and
+the song is the sound. The film's own length is the player's fact, so this applies whether the
+candidate came from the catalogue or from the search.
+
+**AND THE FILM TOOK THE SOUND, SO NOTHING WAS LEFT.** One sound at a time (85.3.9): a film that
+carries its own audio pauses the song underneath it. At the clip's last second the picture
+ended and the deck was still paused, so for the rest of a three-minute song the app sat on a
+still frame in silence - and the lyrics, whose clock is the film while the film is what is
+sounding (85.3.6), froze on the line it had reached at 0:57. New hand-back in `scVideoSync`: a
+film that owns the sound, is well short of the song, and has reached its end (or its last
+0.35 s) gives the sound back - `scVideoOwnSound(false)`, `audioMode` back to `'song'`, and
+`scVideoSong(true)` starts the song again from the second it was held - so the song, and the
+sheet, play to their own end. This is the net under a film whose length the player did not
+report, which is the one case `scVideoLoad` cannot see before the picture is on the screen. A
+held film is never answered this way (85.3.18's `hold`), and neither is a film of the song's
+own length or one paused in the middle.
+
+**AND THE SHEET WILL NOT BE CLOCKED BY A CLIP.** `scLyricsClock` may only take the film's
+second when the film is the same recording as the song. It now reads the song's length
+(`scLyricSongLen` - the row on the sheet, the source's own record, then the element that is
+playing, in that order) and refuses the film clock when the film is under `SC_LYRIC_FILM_SHARE`
+(0.5) of it, falling through to the song's own deck exactly as a closed video tab would. The
+share is its own constant because the sheet and the viewer are two scopes. A film whose length
+is unknown, and a song whose length is unknown, both keep the film as the clock: nothing is
+taken away on a guess.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85321.cjs` passes **43 assertions, 0 failed**. The shipped functions
+are cut out of `index.html` by name and braces and run in a vm against fakes, and the load
+branch is asserted where it sits. The ones this release is about: a 0:57 film under a 3:00
+song no longer clocks the sheet (the song's own second does) while a film of 181 s under the
+same song still does, exactly half is still a film, a film with no length of its own is still
+followed, an unknown song length takes nothing away, the song's length is read off the sheet's
+row, off a source song's own record and off the playing element, and a stopped song is still
+no clock; a film that owns the sound at 57 s of a 180 s song gives the sound back, the song
+becomes the sound, is started again, nothing is held and the footer says what happened - at
+`ended` and at the last 0.35 s, in `'video'` mode and in `'aux'` - while a full-length film
+that ends, a clip paused in the middle, a held film and a film that never owned the sound are
+all left alone; the load calls a film under the share a clip before it looks at `cand.own`,
+the catalogue check keeps its own line, the clip gets one search per song, no full film means
+the cover and the song (`scVideoNoVideo`, which starts the song) and never the clip, a search
+with nothing better does not fall back to it, and the latch is on the tab's state and cleared
+per song. All 10 inline scripts parse, the page and the shell cache are 85.3.21, the notes
+entry is above 85.3.20 and carries no word the Play channel filters. The 85.3.20 (**61**, with
+its version pin relaxed to "85.3.20 or newer" and a note saying so), 85.3.19 (**49**),
+85.3.18 (**66**), 85.3.17 (**45**), 85.3.16 (**60**), 85.3.15 (**63**), 85.3.14 (**38**),
+85.3.13 (**37**), 85.3.12 (**32**), 85.3.11 (**22**), 85.3.10 (**32**), 85.3.9 (**46**),
+85.3.8 (**57**), 85.3.7 (**66**), 85.3.6 (**75**), 85.3.4 (**243**), 85.3.3 (**235**),
+85.3.2 (**213**) and the 85.3.0/85.3.1 (**204**) sets still pass. `dev/check-8535.cjs` still
+pins the exact string `85.3.5` and fails the same two version assertions on HEAD; it has not
+been part of the routine set since 85.3.6. Both OTA channels rebuilt to a fixed point
+(`1346662 -> 1348897 -> 1348909 -> 1348909`) and verify with `--check`.
+
+Not checked: **no phone and no song or film watched.** Nothing was played from this sandbox, so
+what is proven is which film is refused, when the sound is handed back, and which clock the
+sheet takes - not that this particular upload is the one that was playing on the owner's phone,
+nor that Gemini times a given Punjabi line on a given syllable. The 0:57 in the screenshots is
+read as the film's own length, which is what `scVideoState.vidLen` is set from; if a phone's
+player ever reports a length the stream does not honour, that is not something these assertions
+can see. The film is still chosen by title and length (85.3.14), so a song whose only uploads
+are teasers now shows its cover and an honest line where it used to show a minute of somebody's
+clip. The deck's second is where the song resumes after a clip, not the clip's second - the two
+clocks were never one for a teaser, and following the clip would land the song somewhere it was
+never played. Page-only: no native change, so the APK is not rebuilt.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1348909 bytes**, `ota-play/updates.json` **1348922 bytes**.
+
+### The model hears the recording first, and a sheet that arrived timed can be timed again
+
+**The owner's report**: "this lyrics is soo friken off not even close to where it actually
+is fix that cuh with ai gemeni key". A sheet on screen whose lines were nowhere near the
+voice, and a Gemini key that could not do anything about it.
+
+**THE SONG WAS LOOKED UP IN THE QUEUE, AND THE AUDIO CAME FROM A LIBRARY FILE.**
+`aiSyncLyrics` found its track with `allTracks.find(tr => tr.id === queue[queueIndex])`, so a
+sheet opened on a song played from the source had no track at all and answered "No track
+info." - and the recording it attached came from `t.file`, which such a song does not have.
+That is 85.3.15's own blind spot, left in the one place it mattered: the ask could not run on
+the songs whose bytes the app had just read. The ask now resolves the sheet's own song
+(`scLyricSong`, 85.3.15) and the bytes that song has (`scLyricAudioSource`), falling back to
+`t.file`, and it stores the timing through `scLyricsPersist` so a source song keeps it.
+
+**A SHEET THAT ARRIVED WITH STAMPS WAS REFUSED ON SIGHT.** `if (currentLyricsSynced &&
+!scLyricsLookEvenlySpaced(rawLyrics) && /\[\d{1,2}:\d{2}/.test(rawLyrics))` toasted "Lyrics are
+already synced" and returned - which is every sheet a lyrics database hands over timed. The one
+wrong timing the owner kept hitting was therefore the one timing the model was never allowed to
+touch. New `force` argument: the AI Sync button now always passes it, and the sheet's own pass
+passes it too, so a stamped sheet can be timed again. Without `force` the old refusal stands
+(the silent path still will not fight a timing nobody complained about).
+
+**THE OLD TIMES WENT TO THE MODEL WITH THE WORDS.** The numbered lines handed to the model were
+the sheet's raw rows, so a sheet that already carried `[mm:ss.xx]` stamps sent its old timing as
+part of the lyrics - the model was given something to agree with while being asked to place the
+lines. `scStripLrcStamps` now strips them before the words are numbered; the sheet keeps its own
+stamps until the new timing replaces it.
+
+**AND WITH A KEY SET, THE SHEET ASKS THE MODEL BEFORE THE MEASUREMENT.** 85.3.15 put the
+measurement in front of the model on the argument that a model that cannot hear the song is
+guessing while the recording never does. The other half of it is what the owner reported: the
+measurement lays the lines out by how much singing each holds and pulls each one at most
+`SC_ONSET_PULL` (1.1 s) onto a rise nearby - so a chorus that comes back faster, verses whose
+words and seconds do not match, or a sheet written for another cut is still **a share of the
+song**, and a share is not close by the last verse. The model is handed the audio itself
+(73.1.3), so it can place a line against the voice it hears. The sheet's own pass in
+`showLyrics` now forces that ask first when `_aiGeminiKey` is set, and only falls back to the
+old behaviour (measure an untimed sheet, nudge a stamped one) when the model declines or
+fails. `scAutoTimeCurrentLyrics` keeps its measurement-first order - it is the fallback now.
+
+The trade is stated plainly because it is the owner's call, not a measurement: **with a key
+set, a sheet is asked about once per song per session even when a lyrics database already
+timed it correctly**, and the model's answer replaces that timing as long as it passes the
+guards. A device with no key keeps 85.3.15 exactly. The AI Sync button is the way to re-time
+one song on demand (it forces, and it is allowed to try again after a failure).
+
+**WHAT THE MODEL STILL MAY NOT DO.** Every 73.1.5 and 85.3.15 guard stays: the words come back
+word for word (`scLyricRowsMatchSheet`), an even split is refused, a line dropped inside a
+measured break is pulled to where the voice resumes (`scPullRowsClearOfGaps`), and every stamp
+is snapped onto a real rise in the recording (`scSnapRowsToOnsets`). A new line timing also
+clears the word timing measured against the old one (`scWordTimes` and `lyricWords_<id>`), since
+word-by-word paces inside the windows these new stamps draw. And a song from the source that is
+still being read is not handed to the model without its audio - a text-only guess is exactly
+the "the rhythm changes with AI" report this is not repeating; the read landing already calls
+`scLyricKickMeasure()`. New `scAiTriedAuto` records that the automatic pass asked, whatever the
+answer, so a refused ask is not repeated on every repaint (the old latch is cleared on failure
+so the button can still retry).
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85320.cjs` passes **61 assertions, 0 failed** - the shipped
+`aiSyncLyrics` cut out of `index.html` by name and braces and run in a vm with every dependency
+handed in, its Gemini request answered by a fake `fetch`. The ones this release is about: a
+forced ask runs on a sheet that already has stamps and a request is made; the recording goes
+with the words (the bytes are the sheet song's own); the old stamps are **not** in the prompt
+and the words are, one per line, numbered; the timing is written to the sheet's own song, marked
+timed, stored through `scLyricsPersist` and not through a library record, repainted, and the
+stale word timing dropped in memory **and** in the store; a second silent ask for the same sheet
+is refused without a second request. A stamped, synced sheet without `force` is refused with
+"already synced" and nothing is written, while the button (forced) times it again and still
+says so. A song from the source is timed rather than answered with "No track info.", its own
+bytes go with the request and its timing is stored under its own id - and with no key there is
+no ask at all. A timing that changed the words is refused and the song keeps its own text; an
+even split is refused; a song that changed while the model was answering is not written over;
+the queue lookup is gone from the ask, `scLyricSong()` and `scLyricAudioSource()` are what it
+reads, the stamps are stripped before numbering, every failure path frees the latch, and no
+`persistTrackMeta` call is left. On the page: the sheet pass forces the ask, latches it once per
+sheet, asks before the fallback, falls back when the model declines, no longer carries the old
+"ask only after the measurement" block, asks about the sheet on screen, still re-measures an
+even-split sheet, a sheet still being read is not handed over without its audio, and the
+measurement still runs first inside `scAutoTimeCurrentLyrics` with its model fallback sharing
+the latch. All 10 inline scripts parse, the page and the shell cache are 85.3.20, the notes
+entry is above 85.3.19 and carries no word the Play channel filters. The 85.3.19 (**49**),
+85.3.18 (**66**), 85.3.17 (**45**), 85.3.16 (**60**), 85.3.15 (**63**), 85.3.14 (**38**),
+85.3.13 (**37**), 85.3.12 (**32**), 85.3.11 (**22**), 85.3.10 (**32**), 85.3.9 (**46**),
+85.3.8 (**57**), 85.3.7 (**66**), 85.3.6 (**75**), 85.3.4 (**243**), 85.3.3 (**235**),
+85.3.2 (**213**) and the 85.3.0/85.3.1 (**204**) sets still pass. Three assertions were adjusted
+for this release's contract, each with a note in its file: 85.3.15's unit now has `scAiTriedAuto`
+in scope (the page declares it beside `scAiTimedTracks`), and 85.3.19's version pin reads "85.3.19
+or newer". `dev/check-8535.cjs` still pins the exact string `85.3.5` and fails the same two
+version assertions on HEAD; it has not been part of the routine set since 85.3.6 and is
+unchanged here. Both OTA channels rebuilt to a fixed point (`1343872 -> 1346662 -> 1346662`) and
+verify with `--check`.
+
+Not checked: **no phone and no song listened to.** Nothing was played from this sandbox, so what
+is proven is which song and which bytes the ask carries, what the model is given, what is
+refused, and where a timing is written - not that Gemini places a particular Punjabi line on a
+particular syllable, nor that the sheet in the report now lines up. The model's own accuracy is
+not something this app can measure: the guards can only refuse a timing that changed the words,
+doubled as an even split or left the sheet's own text, not one that is wrong and well formed.
+The recording measurement is still the fallback and still cannot hear the voice - it is a share
+of the song plus a 1.1 s snap - which is why the model now goes first when a key is set. A
+no-key device keeps exactly the 85.3.15 behaviour. One ask per song per session is still the
+rule, and the whole recording goes inline (up to 18 MB), so a very long track falls back to the
+text-only ask and the measurement.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1346662 bytes**, `ota-play/updates.json` **1346674 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.19 (November 26, 2026): a tap is not a pause, a size you pick is yours to keep, and the film is its own film
 
 **The owner's report**: "clicking on the video shouldn't auto pause it it should just open up
