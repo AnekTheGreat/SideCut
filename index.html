@@ -20203,14 +20203,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // (`filmAt`), the second a saved position was seeded for (`seeded`), and when the
     // position was last written down (`posSaved`).
     hold: false, filmAt: 0, seeded: null, posSaved: 0,
-    rungs: [], rung: null, want: 0, wide: false,
+    // 85.3.19 - a size the owner picked by hand (`manualH`), which the rate never takes away.
+    rungs: [], rung: null, want: 0, manualH: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
     idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
     pendingKey: '', lastLoad: 0, voice: null,
     fxOn: false, fxRaf: 0, fxPainted: 0,
     // 85.3.6 - the hand-off while the app is away, and the AI-tuned upscale.
-    bg: null, aiTimer: null, aiAsked: '', aiEdge: 0, aiContrast: 0, aiSaturate: 0,
+    bg: null, aiTimer: null, aiAsked: '', aiTries: 0, aiEdge: 0, aiContrast: 0, aiSaturate: 0,
     // 85.3.7 - which size answers, and which of those asks is still the current one.
     landSeq: 0, pickSeq: 0,
     // 85.3.8 - a verdict the reader gave, a size on a short leash, and the buffer the
@@ -20668,7 +20669,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '<div id="scVideoHead">' +
         '<button type="button" id="scVideoBack" title="Back" aria-label="Back">' + SC_VICON_BACK + '</button>' +
         '<div class="sv-t"><b id="scVideoTitle">Music video</b><i id="scVideoSub"></i></div>' +
-        '<button type="button" class="sv-chip" id="scVideoChip" style="display:none;" aria-label="Video quality">360p</button>' +
+        '<button type="button" class="sv-chip" id="scVideoChip" style="display:none;" aria-label="Video quality">1080p</button>' +
         '<button type="button" id="scVideoClose" title="Close" aria-label="Close">&#215;</button>' +
       '</div>' +
       '<div id="scVideoStage">' +
@@ -20737,9 +20738,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
       // A TAP ON THE PICTURE OPENS THE MINI BAR. It brings the transport back and does
       // nothing else. It used to be a play/pause, which is how looking at the controls
-      // stopped the song's film.
+      // stopped the song's film. 85.3.19 - the tap is answered by one named door, and
+      // that door cannot reach the transport at all.
       var q = scVideoEl('scVideoQ');
-      if(q && q.classList.contains('on')){ scVideoQualityToggle(false); return; }
+      if(q && q.classList.contains('on')){ scVideoQualityToggle(false); scVideoPictureTap(); return; }
       scVideoPictureTap();
     });
     // A touch anywhere wakes the transport; in landscape the two-second walk off
@@ -20749,6 +20751,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
     var v = scVideoEl('scVideoEl');
     if(v){
+      // 85.3.19 - A TAP ON THE FILM IS NEVER A TRANSPORT PRESS. The element answers its own
+      // click so nothing above it can turn a look at the picture into a pause; the round
+      // button and the big drawn button are the only two play/pause doors.
+      v.addEventListener('click', function(e){
+        if(e && e.stopPropagation) e.stopPropagation();
+        scVideoPictureTap();
+      });
       v.addEventListener('playing', function(){
         scVideoState.blocked = false;
         scVideoWatchStop();
@@ -21661,7 +21670,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // a filtered copy for every frame - which on a phone showing a sharp size is the
     // difference between a film and a slideshow. A soft film gets the mask; a sharp one
     // gets the resample and nothing else.
-    var wantEdges = vh < SC_VFX_EDGE_H;
+    // AND A FRAME THAT IS BEING STRETCHED TO THE SCREEN HAS LOST ITS EDGES IN THE STRETCH,
+    // whatever size it arrived at. The mask used to be for sources under 720 alone, so a
+    // FULL HD frame drawn onto a high-density phone - the common case, and exactly when an
+    // upscale is asked for - was resampled with nothing put back. The cost is only paid when
+    // the drawn frame is larger than the source; a downscaled frame keeps the cheap path.
+    var upscaled = (dw > vw * 1.02) || (dh > vh * 1.02);
+    var wantEdges = vh < SC_VFX_EDGE_H || upscaled;
     var buf = wantEdges ? scVideoFxBuff(W, H) : null;
     if(buf){
       var bx = buf.ctx;
@@ -21891,6 +21906,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var cached = scVideoAiRead(id);
     if(cached){ scVideoAiApply(cached); return; }
     if(scVideoState.aiAsked === id) return;
+    // A FRAME HAS TO EXIST BEFORE IT CAN BE LOOKED AT. The recipe is read off the picture, so
+    // a film whose first frame has not landed yet is asked again shortly instead of losing
+    // its one ask to a stage that was still starting.
+    var pv = scVideoEl('scVideoEl');
+    if(!pv || Number(pv.readyState) < 2 || !(Number(pv.videoWidth) || 0)){
+      if((Number(scVideoState.aiTries) || 0) < 8){
+        scVideoState.aiTries = (Number(scVideoState.aiTries) || 0) + 1;
+        scVideoAiSchedule();
+      }
+      return;
+    }
     var key = '';
     try{ key = (typeof _aiGeminiKey !== 'undefined') ? String(_aiGeminiKey || '') : ''; }catch(_eAiKey){ key = ''; }
     if(!key) return;
@@ -21899,6 +21925,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var b64 = still.split(',')[1] || '';
     if(!b64) return;
     scVideoState.aiAsked = id;
+    scVideoState.aiTries = 0;
     var prompt = 'You are tuning the upscaler for a music video being played on a phone. ' +
       'You are shown ONE frame of it, reduced in size. The app will stretch the frame to the ' +
       'screen, take its own edges out with a small blur, and add those edges back over the ' +
@@ -22057,6 +22084,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.want = Number(h) || 0;
     var r = scVideoRungFor(scVideoState.rungs, h);
     if(!r) return;
+    // 85.3.19 - A SIZE PICKED BY HAND IS KEPT. The rate may say the picture is short of
+    // frames; it may not take a height the owner asked for away on the next window. A
+    // pick of AUTO (0) hands the steering back to the automatic ladder.
+    scVideoState.manualH = Number(h) ? Number(r.h) : 0;
     scVideoChooseFresh(Number(h) ? r.h : 0);
     if(scVideoState.rung && r.h === scVideoState.rung.h){
       // THE SIZE YOU ARE ON IS STILL A REQUEST TO SEE IT. A picture that is not up (a black
@@ -22259,7 +22290,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // A SIZE THE READER WOULD NOT READ PAST IS ON A SHORT LEASH: the element still gets
     // its chance, but it gets seconds rather than half a minute before the sharpest size
     // that answered takes over.
-    if(scVideoState.suspect) ms = Math.min(ms, SC_VQ_SUSPECT_MS);
+    // A SIZE THE OWNER PICKED GETS THE NORMAL WINDOW EVEN IF THE READER DOUBTED IT: the tap
+    // is a request to try that size properly, not to give it six seconds to prove itself.
+    if(scVideoState.suspect && !scVideoState.manualH) ms = Math.min(ms, SC_VQ_SUSPECT_MS);
     scVideoState.watch = setTimeout(function(){
       scVideoState.watch = null;
       if(token !== scVideoState.watchToken) return;
@@ -22405,6 +22438,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scVideoSlow(){
     var st = scVideoState, from = st.rung;
     if(!from || !Number(from.h) || !st.open) return false;
+    // A SIZE PICKED BY HAND IS NEVER TAKEN AWAY. The owner asked for this height, so the
+    // rate is a hint and not a veto: the footer still names the rate (the verdict above
+    // writes it), but the picture stays on the size that was chosen.
+    if(st.manualH && Number(from.h) === Number(st.manualH)) return false;
     var steps = Number(st.rateSteps) || 0;
     if(steps >= SC_VQ_RATE_STEPS) return false;         // this film has given up enough sizes
     var now = Number(st.rateNow) || 0, was = Number(st.rateBest) || 0;
@@ -22430,8 +22467,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
         return true;
       }
     }
-    if(scVideoLand(why, 'Nothing smaller keeps up here either - pick a size from the list, or NEXT.', true)) return true;
-    scVideoFoot(why + ' There is no smaller size for this video to land on.');
+    // AND THE AUTOMATIC STEP STOPS AT FULL HD. FULL HD is where this tab opens, so it is as
+    // low as a measured verdict may take the picture on its own. Walking 1080p to 720p,
+    // 480p and 360p on the rate is what made the size list look locked to 360p: a phone that
+    // reports a low rate at the size it was asked for was never left on that size long
+    // enough to be watched. The list is how a smaller size is chosen, by the owner.
+    scVideoFoot(why + ' The picture stays on ' + from.label +
+      ' - pick a smaller size from the list if it is too heavy for this phone.');
     return false;
   }
 
@@ -22451,16 +22493,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // 85.3.18 - THE FILM OPENS ON ITS OWN SECOND, NOT THE SONG'S. The picture was seated
     // on the song's clock in every mode, so a video entered when the song was three
     // minutes in opened three minutes in and played the minute that was left of it -
-    // "it should be the full length of the video, not 1 minute". A size that carries its
-    // own sound (the picture, or its paired track) is a film in its own right: it opens
-    // on the second it was left on, or at the top, and plays to its own end. Only where
-    // the SONG is the soundtrack - a size with no audio row at all - does the picture
-    // have to stay on the song's clock, because there the sound and the frames are the
-    // same recording and starting the picture at 0:00 would play the wrong part of it.
+    // "it should be the full length of the video, not 1 minute".
+    // 85.3.19 - AND THAT IS TRUE IN EVERY MODE. The one hole left was a size with no audio
+    // row at all: the picture was still seated on the song's clock there, so entering the
+    // tab late opened the film late and played its last minute, and the song ending stopped
+    // the film early. The song is only the sound under that picture now; the picture keeps
+    // its own second and plays to its own end whichever size it arrived at.
     var seeded = false;
     if(start == null){
-      if(mode === 'song'){ start = scVideoSongTime(); }
-      else { start = Number(scVideoState.filmAt) || 0; seeded = start > 0.5; }
+      start = Number(scVideoState.filmAt) || 0;
+      seeded = start > 0.5;
     }
     scVideoState.seeded = seeded ? start : null;
     scVideoState.startAt = start;
@@ -22483,10 +22525,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoPose(v, start);
     if(mode === 'video' || mode === 'aux') scVideoHoldSong();
     if(mode === 'aux') scVideoAuxSet(start);
-    if(mode === 'song'){
-      var s = scVideoAudioEl();
-      try{ if(s && start != null) s.currentTime = Number(start) || 0; }catch(_eSS){}
-      if(scVideoState.wasPlaying) scVideoSong(true);
+    // 85.3.19 - THE SONG IS NOT REWOUND ONTO THE FILM. It was seated on the picture's
+    // second here, which restarted the song whenever the picture opened at the top and put
+    // the two clocks back out of step. The song keeps its own second; the tick starts and
+    // stops the picture with it and never moves either clock. It is only started if it was
+    // not running at all - there is no sound under the picture otherwise.
+    if(mode === 'song' && scVideoState.wasPlaying){
+      var ss = scVideoAudioEl();
+      if(ss && ss.paused && !ss.ended) scVideoSong(true);
     }
     try{ v.load(); }catch(_eLoad){}
     scVideoPose(v, start);
@@ -22675,7 +22721,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // ONLY THE BAR. A tap on the film used to reach the play/pause, so looking at the
     // picture stopped it; it brings the mini bar back and does nothing else. Play and
     // pause belong to the round button, and to the big drawn button over a still.
+    // 85.3.19 - THE BAR IS THE WHOLE ANSWER, IN PORTRAIT AS WELL AS ON THE GLASS. The bar is
+    // made visible here rather than only being marked awake, so a tap while it is already
+    // up is still a tap that does nothing to the film.
     scVideoIdleWake();
+    var d = scVideoEl('scVideoBackdrop');
+    if(d && d.classList) d.classList.remove('sc-vidle');
+    scVideoBarState();
   }
 
   function scVideoTap(){
@@ -22858,10 +22910,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!a || v.readyState < 1) return;
     scVideoState.audio = a;
     try{
-      var at = Number(a.currentTime) || 0;
-      var vt = Number(v.currentTime) || 0;
-      if(force || Math.abs(vt - at) > 1.5){ try{ v.currentTime = at; }catch(_eSeek){} }
-      if(a.paused){ if(!v.paused){ try{ v.pause(); }catch(_ePause){} } }
+      // 85.3.19 - THE PICTURE IS NOT DRAGGED ONTO THE SONG'S SECOND. It used to seek the film
+      // to the song every tick where the song was the soundtrack, which cropped a longer film
+      // to the part the song had left. The two clocks are the same recording nowhere now: the
+      // song is the sound under the picture, and the picture keeps its own second.
+      // ONLY A SONG THAT WAS PAUSED BY SOMEBODY STOPS THE PICTURE. A song that has simply
+      // reached its end is not a request to stop a film that is still playing.
+      var songDur = Number(a.duration) || 0;
+      var songEnd = songDur > 0 && (Number(a.currentTime) || 0) >= (songDur - 0.6);
+      if(a.paused && !songEnd){ if(!v.paused){ try{ v.pause(); }catch(_ePause){} } }
       else if(v.paused && !scVideoState.blocked){ scVideoPlayAttempt(); }
     }catch(_eSync2){}
     scVideoClock();
@@ -23301,7 +23358,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.watchMore = 0;
     scVideoStreamDrop();
     scVideoState.want = scVideoWant();
+    scVideoState.manualH = 0;         // a new film opens on the default until a size is picked
     scVideoState.aiAsked = '';
+    scVideoState.aiTries = 0;
     scVideoState.aiEdge = 0;
     scVideoState.aiContrast = 0;
     scVideoState.aiSaturate = 0;
@@ -23541,7 +23600,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // clock). Where the song IS the sound the two clocks are one, and it is seated where
     // the picture stopped.
     scVideoOwnSound(false);
-    scVideoParkSong(stopAt, scVideoState.audioMode !== 'song');
+    // 85.3.19 - THE SONG IS PARKED WHERE IT IS, WHATEVER WAS THE SOUND. The picture is its own
+    // film even where the song was the sound under it, so the two clocks are no longer one and
+    // seating the song on the picture's second would move a song that never moved.
+    scVideoParkSong(stopAt, true);
     scVideoVoiceReset();
     try{ if(scVideoState.blobUrl) URL.revokeObjectURL(scVideoState.blobUrl); }catch(_eRev2){}
     scVideoState.blobUrl = '';
@@ -23556,6 +23618,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // NOTHING IS HANDED OVER AND NOTHING IS TUNED once the tab is gone.
     scVideoState.bg = null;
     scVideoState.aiAsked = '';
+    scVideoState.aiTries = 0;
     scVideoState.aiEdge = 0;
     scVideoState.aiContrast = 0;
     scVideoState.aiSaturate = 0;
@@ -24831,7 +24894,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.3.18';
+  const APP_VERSION = '85.3.19';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25541,6 +25604,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.3.19', date: 'November 26, 2026', title: 'A tap on the film only opens the controls, the size you pick is the size you keep, and the video plays to its own end', items: [
+      'A tap on the picture only brings the mini bar back. Play and pause belong to the round button and the big button over a still, so looking at the film can never stop it.',
+      'The music video opens on FULL HD unless another size has been chosen, and a size picked by hand is never taken away: the tab may say the picture is short of frames, but it leaves it on the size that was asked for.',
+      'A size above FULL HD that this phone cannot keep up with still steps back, but only as far as FULL HD - the automatic step no longer walks the picture down to 360p on its own.',
+      'The film plays from its own first frame to its own last: where a size has no sound of its own the song is only the sound under it, and it no longer drags the picture to its own second or stops the film when the song ends.',
+      'HD+ now sharpens the frame whenever it is being stretched to this screen, whatever size it arrived at, and the AI-tuned amounts are read from the first frame the film actually shows.'
+    ] },
     { version: '85.3.18', date: 'November 25, 2026', title: 'The music video is the whole video, it opens on the second you left, and a pause stays paused', items: [
       'The music video plays the whole video now instead of starting wherever the song had got to: a film entered three minutes into a song used to open three minutes in and play only its last minute.',
       'The second you stop a video on is remembered for that song, so closing the tab and entering the same video again carries on from where you stopped - and it is written down while the film plays, so a tab the phone closes later resumes too.',

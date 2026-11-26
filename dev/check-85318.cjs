@@ -241,11 +241,14 @@ async function main() {
     ok('a size that carries its own sound does the same', h.state.startAt === 42);
   }
   {
+    // 85.3.19 changed this contract on purpose: the film is its own film in every mode, so a
+    // size with no sound of its own opens on the film's second too instead of the song's. The
+    // assertions here are rewritten to that contract; 85.3.19's own gate proves it.
     const h = harness({ state: { audioMode: 'song', filmAt: 84 } });
     h.U.scVideoAttach('u1', 'direct', false);
-    ok('where the SONG is the soundtrack the picture stays on the song\'s second',
-      h.state.startAt === 300, h.state.startAt);
-    ok('and no seeded second is claimed', h.state.seeded === null);
+    ok('85.3.19: where the SONG is the soundtrack the picture opens on the film\'s own second',
+      h.state.startAt === 84, h.state.startAt);
+    ok('and that second is seeded for the length check', h.state.seeded === 84);
   }
   {
     const h = harness({ state: { audioMode: 'aux', filmAt: 84, resumeAt: 120 } });
@@ -334,8 +337,10 @@ async function main() {
       atSave >= 0 && atOpen > atSave, atSave + '/' + atOpen);
     ok('and a tab with nothing in it is not a request to forget it',
       /if\(stopAt > 0\.5\) scVideoPosSave\(stopAt\);/.test(close), close.slice(0, 80));
-    ok('and parks the song without moving it where the film had its own sound',
-      /scVideoParkSong\(stopAt, scVideoState\.audioMode !== 'song'\)/.test(close));
+    // 85.3.19: the song is parked where it is whatever was the sound, because the picture is
+    // its own film now in every mode. Rewritten to the contract this release shipped.
+    ok('and parks the song without moving it',
+      /scVideoParkSong\(stopAt, true\)/.test(close));
   }
   {
     const load = grab('scVideoLoad');
@@ -377,7 +382,11 @@ async function main() {
     }
     ok('every inline script parses (' + scripts + ' scripts)', bad === 0, bad + ' failures');
     const vPage = (page.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-    ok('the page is on 85.3.18', vPage === '85.3.18', vPage);
+    // 85.3.19 kept every behaviour this gate proves, so the version assertion is "85.3.18 or
+    // newer" rather than an exact string (the convention this file’s neighbours already use).
+    const vNum = String(vPage || '').split('.').map(Number);
+    const vFresh = vNum[0] > 85 || (vNum[0] === 85 && (vNum[1] > 3 || (vNum[1] === 3 && vNum[2] >= 18)));
+    ok('the page is 85.3.18 or newer', vFresh, vPage);
     ok('the shell cache is on the same version', sw.includes('sidecut-shell-v' + vPage), vPage);
     ok('the notes carry the 85.3.18 entry', page.includes("version: '85.3.18'"));
     ok('the new entry is above 85.3.17',

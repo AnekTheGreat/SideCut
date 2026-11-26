@@ -192,13 +192,12 @@ console.log('\n2. A size this phone cannot keep up with is not the size you are 
   const r = perfRun({ rung: fourRungs[2], fxOn: false, land: true, realSlow: true });
   r.state.fps = 4;
   const moved = r.U.scVideoSlow();
-  ok('at FULL HD the picture lands on the sharpest size under it', moved === true && /1080p was showing 4 frames a second/.test(r.calls.land), r.calls.land);
-}
-{
-  const r = perfRun({ rung: fourRungs[2], fxOn: false, land: false, realSlow: true });
-  r.state.fps = 4;
-  const moved = r.U.scVideoSlow();
-  ok('when nothing under it is there, it says so instead of pretending', moved === false && /no smaller size/.test(r.calls.foot[0]), r.calls.foot[0]);
+  // 85.3.19 changed this contract on purpose: the automatic step stops at FULL HD, so a 1080p
+  // picture this phone cannot keep up with is left where it is and the size list is the way
+  // down. The assertions are rewritten to that contract; 85.3.19's own gate proves it.
+  ok('85.3.19: at FULL HD the picture is left on FULL HD', moved === false && !r.calls.land, r.calls.land);
+  ok('and the footer says it is staying, with the size list as the way down',
+    /stays on 1080p/.test(r.calls.foot[0] || '') && /list/.test(r.calls.foot[0] || ''), r.calls.foot[0]);
 }
 {
   const r = perfRun({ rung: null, fxOn: false, realSlow: true });

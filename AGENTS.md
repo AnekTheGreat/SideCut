@@ -1,5 +1,105 @@
 # SideCut — repository memory
 
+## 85.3.19 (November 26, 2026): a tap is not a pause, a size you pick is yours to keep, and the film is its own film
+
+**The owner's report**: "clicking on the video shouldn't auto pause it it should just open up
+the mini bar at the bottom, also the quality shit isnt working and is locked to 360p when the
+default should be 1080p and should be fully adjustable add ai upscaling to this or any upscaling
+to the video to make it look better  and the mv should go the full length of the song not just a
+minute". Four faults, and two of them are the same fault seen from the two ends of one size list.
+
+**A TAP ON THE PICTURE WAS STILL A TRANSPORT PRESS.** The stage's click already went to
+`scVideoPictureTap`, but that door only marked the controls awake and the `<video>` element had
+no click of its own - so a tap could be read by whatever handler the page had around it, and on
+the phone the report was "clicking on the video auto pauses it". The element now answers its own
+`click` with `stopPropagation` and `scVideoPictureTap`, and that door removes `sc-vidle` and
+repaints the mini bar. Nothing in it can reach `scVideoTap`, `scVideoTransport`, `play()` or
+`pause()`. Play and pause remain the round button and the big drawn button over a still.
+
+**THE RATE WALKED 1080p DOWN TO 360p, AND IT DID NOT CARE THAT THE SIZE WAS PICKED BY HAND.**
+`scVideoSlow` gave up a size on every pair of bad windows, at or under FULL HD too, through
+`scVideoLand` - so a phone whose measured rate sat under `SC_VQ_MIN_FPS` was reloaded 1080p to
+720p to 480p to 360p over one song, which is the "locked to 360p" in the report. And a height
+the owner tapped was walked away from on the next window exactly like a height the tab chose.
+New `scVideoState.manualH` (set by `scVideoQualityChoose` for any pick above AUTO, cleared by
+`scVideoLoad`) means the rate never takes a hand-picked height away; and `scVideoSlow` no longer
+lands anywhere at or under `SC_VQ_FLOOR` - it names the rate on the footer, says the picture is
+staying, and points at the size list. Above the floor the one move to FULL HD stands. The
+suspect leash (`SC_VQ_SUSPECT_MS`) is skipped for a hand pick too, so the size the owner asked
+for gets the normal weight-scaled window instead of six seconds.
+
+**THE DEFAULT WAS ALREADY FULL HD, BUT THE WALK MADE IT UNREACHABLE.** `SC_VQ_DEFAULT` is still
+1080 and `scVideoWant()` still reads an unstored setting as it; the chip's markup now says
+1080p rather than 360p before the first film marks it. AUTO is still a choice and is kept as
+one, and a stored height is still what the next film asks for.
+
+**THE FILM FOLLOWED THE SONG IN THE ONE MODE 85.3.18 LEFT ALONE.** 85.3.18 opened the picture on
+its own second for every size that carries sound (the picture or its paired track) and left the
+`'song'` mode - a size with no audio row at all - on the song's clock, on the argument that
+there the sound and the frames are one recording. That is the mode the report kept coming back
+from: `scVideoAttach` seated the picture on `scVideoSongTime()`, `scVideoSync` dragged it there
+every tick, and when the song ended the picture was paused with it. A film entered two minutes
+into a four-minute song therefore played two minutes and stopped - "just a minute". The picture
+now opens on `filmAt` / 0 in every mode, the attach does not rewind the song onto it, and the
+tick only starts and stops the picture with the song - it never seeks either clock, and a song
+that has merely reached its end does not pause a film that is still playing. `scVideoClose`
+parks the song where it is (`scVideoParkSong(stopAt, true)`), because the two clocks are no
+longer one.
+
+**THE SHARPEN WAS OFF EXACTLY WHEN AN UPSCALE WAS BEING ASKED FOR.** `scVideoFxPaint` built the
+edge mask only for sources under `SC_VFX_EDGE_H` (720). A FULL HD frame drawn onto a
+high-density phone is *stretched* to the stage's pixel grid - the one case the switch is for -
+and got the resample and nothing else. The mask now also runs when the drawn frame is larger
+than the source (`dw > vw * 1.02 || dh > vh * 1.02`); a downscaled frame keeps the cheap path.
+The AI-tuned recipe still applies when a Gemini key is set, and `scVideoAiTune` now waits for a
+real frame (`readyState >= 2`, `videoWidth > 0`) and asks again a bounded number of times
+(`aiTries`) instead of losing its one ask to a stage that was still starting.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-85319.cjs` passes **49 assertions, 0 failed** - the shipped functions cut
+out of `index.html` by name and braces and run in a vm against a fake picture, a fake song, a
+fake size ladder and a fake preference store. The ones this release is about: a picture tap
+wakes and repaints the bar and never reaches the play/pause door or an outside transport press;
+the picture door contains no `scVideoTap`, no `play()` and no `pause()`; the element answers its
+own click with `stopPropagation`; a `'song'` mode film opens on 84 (not the song's 300), is
+posed there, and the song is neither rewound nor started or stopped by the attach; a fresh film
+opens at 0; a size change keeps the picture's own second; a song that has ended does not pause
+the film and the film is not seeked to it; a song paused in the middle does pause the picture; a
+film that was never paused still runs, without being seeked; a hand-picked height is not given
+up, landed on or rewritten on the footer; at FULL HD the automatic step lands nowhere, applies
+nothing and says the picture stays with the list as the way down; 4K still steps to 1080 and not
+further; a spent budget still stops; an unstored setting is 1080, AUTO is 0 and a stored 720 is
+720; a hand pick records `manualH`, a load clears it and the suspect leash is skipped for it;
+the upscale comparison and the wider mask are in `scVideoFxPaint`, and the AI recipe waits for a
+frame and is bounded. All 10 inline scripts parse, the page and the shell cache are 85.3.19, the
+notes entry is above 85.3.18 and carries no word the Play channel filters. The 85.3.18 (**66**),
+85.3.17 (**45**), 85.3.16 (**60**), 85.3.15 (**63**), 85.3.14 (**38**), 85.3.13 (**37**),
+85.3.12 (**32**), 85.3.11 (**22**), 85.3.10 (**32**), 85.3.9 (**46**), 85.3.8 (**57**),
+85.3.7 (**66**), 85.3.6 (**75**), 85.3.4 (**243**), 85.3.3 (**235**), 85.3.2 (**213**) and the
+85.3.0/85.3.1 (**204**) sets still pass. Four gates had assertions rewritten for this release's
+contract, each with a note in the file: 85.3.18's song-soundtrack second and its park call,
+85.3.13's "a faster size below the floor buys a step", its landing source check and its FULL HD
+landing, 85.3.12's two FULL HD landings, and 85.3.9's two FULL HD landings. `dev/check-8535.cjs`
+still pins the exact string `85.3.5` and has not been part of the routine set since 85.3.6; it
+is unchanged here. Both OTA channels rebuilt to a fixed point (`1341714 -> 1343872 ->
+1343872`) and verify with `--check`.
+
+Not checked: **no phone and no film watched.** What is proven is which door a tap takes, when a
+picked size may be taken away (never), which second the picture opens on in every mode, and what
+the frame loop draws - not that a particular WebView stops pausing on a tap, that a particular
+phone now plays 1080p at a watchable rate, or that a particular MV now runs to its own end. The
+rate walk still exists above FULL HD, so a 4K picture can still land on 1080; the phone user can
+still choose any size, and a hand pick is honoured even when it is slow - that is the trade this
+release makes on purpose. Whether the sharp sizes are *served* to this phone is still the source's
+answer and the 85.3.8 reader's job, not something these assertions can show. The AI recipe is
+only read when a Gemini/key-bearing AI settings path is configured; without one HD+ is the
+resample-plus-edge mask it always was, and this release does not ship a model.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1343872 bytes**, `ota-play/updates.json` **1343888 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
 ## 85.3.18 (November 25, 2026): the film opens on its own second, it remembers where it was left, and a pause is a pause
 
 **The owner's report**: "if you stop a mv, and exit it should resume automatically from the

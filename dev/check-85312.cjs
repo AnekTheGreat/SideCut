@@ -177,22 +177,25 @@ console.log('\n2. A sharp size goes to FULL HD in one move, and a height is neve
   ok('the height that could not keep up is not written into the size list', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
   ok('and 1440p is not marked - it was never tried', !r.state.deadH[1440]);
   const footAfterStep = r.calls.foot.length;
-  // FULL HD is short of frames on this phone too, so the picture moves on - one size at a
-  // time, still without touching the list.
+  // 85.3.19 changed this contract on purpose: the automatic step stops at FULL HD, so a FULL
+  // HD picture that is short of frames is measured, named on the footer, and left where it is
+  // - the size list is the way down now. The assertions are rewritten to that contract.
   window3(r, 2);
   window3(r, 2);
-  ok('a size the picture landed on is measured and may be given up as well', r.state.rateSteps === 2, r.state.rateSteps);
-  ok('the landing is told that it is the rate asking', r.calls.land > 0, r.calls.land);
-  ok('so the size list is still untouched', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
-  ok('and the picture says what it is doing', r.calls.foot.length > footAfterStep, r.calls.foot.length);
+  ok('85.3.19: a FULL HD picture that is short of frames is left where it is',
+    r.calls.land === 0 && r.calls.apply.length === 1, r.calls.land + '/' + r.calls.apply.length);
+  ok('and the size list is still untouched', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
+  ok('and the picture says it is staying, pointing at the list',
+    r.calls.foot.length > footAfterStep && /stays on 1080p/.test(r.calls.foot[r.calls.foot.length - 1] || ''),
+    r.calls.foot[r.calls.foot.length - 1]);
 }
 {
-  // The same phone on a 1080p film: it lands from FULL HD, and that height is not tried again.
+  // The same phone on a 1080p film: it is measured, and it is not landed from any more.
   const r = perfRun({ readyState: 4, fxOn: false, rung: fourRungs[2], land: true });
   window3(r, 3);
   window3(r, 3);
-  ok('a FULL HD picture that cannot keep up is landed from', r.calls.land === 1, r.calls.land);
-  ok('and that height is not taken away a second time', r.U.scVideoSlow() === false && r.calls.land === 1, r.calls.land);
+  ok('85.3.19: a FULL HD picture that cannot keep up is not landed from', r.calls.land === 0, r.calls.land);
+  ok('and that height is not taken away', r.U.scVideoSlow() === false && r.calls.apply.length === 0, JSON.stringify(r.calls.apply));
 }
 {
   // A tap on HD+ by hand is still not argued with; the size may still step back.

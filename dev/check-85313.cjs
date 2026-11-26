@@ -142,21 +142,25 @@ console.log('\n2. A size that cannot keep up steps back until one does');
   ok('and the footer names the size and the rate', /4K was showing 2 frames a second/.test(r.calls.foot[0] || ''), r.calls.foot[0]);
   ok('the size list is not touched by the rate', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
   const footAfter = r.calls.foot.length;
-  // FULL HD is slow too on this phone, and it is the size the walk is standing on: it is
-  // measured again, and the picture moves on. 85.3.12 stopped here, which is the report.
+  // 85.3.19 changed this contract on purpose: the walk stops at FULL HD, so the size the
+  // picture landed on is measured in its own right and then LEFT there - the list is the way
+  // down. The assertions are rewritten to that contract; 85.3.19's own gate proves it.
   window3(r, 2);
   window3(r, 2);
-  ok('a size the picture landed on is measured in its own right, and stepped back from',
-    r.calls.land.length === 1 && r.state.rateSteps === 2, JSON.stringify(r.calls.land) + ' / steps ' + r.state.rateSteps);
-  ok('the landing is told this is the rate, so the list stays honest', r.calls.land[0][2] === true, JSON.stringify(r.calls.land[0]));
-  ok('and it says so once more', r.calls.foot.length > footAfter, r.calls.foot.length);
+  ok('85.3.19: a FULL HD picture that cannot keep up is measured, and stays there',
+    r.calls.land.length === 0 && r.calls.apply.length === 1, JSON.stringify(r.calls.land) + ' / steps ' + r.state.rateSteps);
+  ok('so the size list stays honest', JSON.stringify(r.state.deadH) === '{}', JSON.stringify(r.state.deadH));
+  ok('and it says so once more', r.calls.foot.length > footAfter && /stays on 1080p/.test(r.calls.foot[r.calls.foot.length - 1] || ''), r.calls.foot[r.calls.foot.length - 1]);
 }
 {
-  // A step down to a size that is FASTER keeps going while it is still not a picture.
+  // 85.3.19 - A FASTER SIZE BELOW FULL HD NO LONGER BUYS A STEP: the walk stops at FULL HD,
+  // so the size the picture is on is kept and the list is the way down. Rewritten to that
+  // contract; 85.3.19's own gate proves it.
   const r = perfRun({ readyState: 4, fxOn: false, rung: fourRungs[2], land: true, rateSteps: 1, rateBest: 2, rateNow: 9 });
   const moved = r.U.scVideoSlow();
-  ok('a smaller size showing more frames buys another step', moved === true && r.state.rateSteps === 2, r.state.rateSteps);
-  ok('and the rate it bought is the one the next step compares against', r.state.rateBest === 9, r.state.rateBest);
+  ok('85.3.19: a size under FULL HD that shows more frames does not buy a step below it',
+    moved === false && r.state.rateSteps === 2, r.state.rateSteps);
+  ok('and the picture is left where it is', r.calls.apply.length === 0 && r.calls.land.length === 0, JSON.stringify(r.calls.apply));
 }
 {
   // NO GAIN, NO FURTHER STEP: the size under this one shows fewer frames than this one did,
@@ -179,7 +183,9 @@ console.log('\n2. A size that cannot keep up steps back until one does');
   ok('the function reads the budget before it touches anything', /if\(steps >= SC_VQ_RATE_STEPS\) return false;/.test(grab('scVideoSlow')));
   ok('the budget is a constant, not a number in the body', /var SC_VQ_RATE_STEPS = \d+;/.test(page));
   ok('no size list is written by the rate', !/deadH/.test(grab('scVideoSlow')));
-  ok('and the landing is told when it is the rate asking', /scVideoLand\(why, 'Nothing smaller keeps up here either - pick a size from the list, or NEXT\.', true\)/.test(grab('scVideoSlow')));
+  // 85.3.19: the rate no longer lands the picture below FULL HD at all, so the landing it
+  // used to tell is not in this function. Rewritten to the contract this release ships.
+  ok('and the rate never lands the picture below FULL HD at all', !/scVideoLand\(/.test(grab('scVideoSlow')));
   const land = grab('scVideoLand');
   ok('a landing for the rate does not mark the height it left', /if\(!rateOnly\) scVideoState\.deadH\[from\.h\] = 1;/.test(land), land.slice(0, 80));
 }
