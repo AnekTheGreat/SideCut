@@ -18,6 +18,88 @@ shipped release's number would make two builds claim one version `--` but everyt
 follows the rule above, and any unpublished work is rolled into the next legal number instead of
 getting a made-up label.
 
+## 85.5 (November 26, 2026): the film's sound is the copy that is not cut, and a short file is not the video
+
+**The owner's report**: "THE STUPID MUSIC VUDEO LITERALLY CANT HANDLE OVER 57 SECODNS NIGGA I
+TOLD YOU TO FIX THAT". The same fifty-seven seconds as 85.3.21, one release after that release
+refused short films by the length the player claimed for them. So the length was not the whole
+story, and this time the fault was looked for in what the tab actually PLAYS rather than in what
+it picks.
+
+**THE SOUND WAS THE COPY THE SITE CUTS AT A MEGABYTE.** A sharp size carries no sound of its
+own, so `scVideoLadder` pairs it with the same video's AUDIO row (`snd`), and `scVideoApplyRung`
+plays that pair as two elements - picture, and voice - with the film owning the sound. This file's
+own downloader notes, measured years of releases ago, say why that is fatal for a music upload:
+**the site caps an audio-only row at its first megabyte (403 past it) while the single-file copy
+of the same upload is not capped.** One megabyte of a 145 kbps audio row is **fifty-seven
+seconds**. That is the number in both reports, and it was never the length of any film: it was
+the length of the sound track the tab was handed. The picture kept running; the sound, and
+everything the film owns while it is up, ended a minute in.
+
+85.5 makes the voice the SINGLE-FILE copy of the same film whenever the picture is a sharp size:
+`scVideoLadder` computes `muxVoice` (the first single-file row the element can open) and every
+non-muxed rung is given that as its `audioUrl`, with `audioOne: true`. A single-file picture is
+its own sound and gets no voice at all (`voice = top.muxed ? null : (muxVoice || snd)`), so the
+same recording is never played twice. Only an upload with no single-file copy falls back to the
+audio row, because a short voice is better than none. A one-file voice is a whole film, so it is
+never read into memory for the equalizer (`scVideoVoice` returns the link, `scVideoVoiceRead`
+refuses it) and `scVideoGraphSync` keeps it OUT of the audio graph, where a cross-origin element
+would play silence - it is heard directly instead.
+
+**AND A LENGTH IS STILL ONLY A CLAIM UNTIL THE FILE SAYS IT.** The search's text and the
+player's `lengthSeconds` are both somebody's word; the element that has just decoded the file is
+the witness. New `scVideoShortCheck(v)` runs on the picture's own `loadedmetadata`: if the film's
+REAL duration is under `SC_VQ_FULL_SHARE` (0.5) of the song's, it is not this song's video - the
+film is stepped past on NEXT's own road (`scVideoNext`), and when the candidate list has nothing
+else, the cover is the picture and the song plays on (`scVideoNoVideo`, which starts the song).
+One verdict per attach (`shortSeen`, cleared by `scVideoAttach`), at most four cuts per song
+(`shortFor`/`shortSteps`) so a song whose results are all cuts is a verdict and not an endless
+walk, and nothing is taken away when either length is unknown.
+
+**AND A SOUND THAT RUNS OUT DOES NOT END THE FILM.** The voice is the one thing that can finish
+while the picture still has minutes, and nothing watched for it: the aux element had no `ended`
+listener at all, so a voice that stopped left the tab moving in silence. It now answers its own
+end and hands the sound on (`scVideoAuxFallBack`: the picture's own sound on a single-file size,
+or the song under the picture) unless the picture has ended too.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-855.cjs` passes **46 assertions, 0 failed**. `scVideoLadder` is the
+shipped one, run in a vm with the real `scVideoCanPlay`/`scVideoCodec`/`scVideoRungTag`/
+`scVideoStd`/`scVideoSizeLabel`/`scVideoNoRange` beside it: a sharp size is paired with the
+single-file copy and flagged `audioOne`, every sharp size is, a single-file size gets no voice at
+all, an upload with no single-file copy keeps the audio row, an upload with no sound gets none.
+`scVideoShortCheck` is driven: a 57 s film under a 3:00 song steps past and says so, a lone
+candidate becomes the cover with the picture stopped, a 181 s film for a 180 s song is left alone
+and its own length is trusted, exactly half is still a film, an unknown song length and an
+unknown film length each take nothing away, the same attach is judged once, four cuts per song is
+the cap, and a new song starts its own count. The aux `ended` road is read where it sits (it
+spares a film that really ended and a picture at its own end), the voice strings are asserted,
+and the release facts are: 10 inline scripts parse, the page and the shell cache are 85.5, the
+notes carry one `85.5` entry above 85.4 with no word the Play channel filters, and the version is
+two parts or one digit after the second. Every earlier gate still passes: 85.3.22 **25**, 85.3.21
+**43**, 85.3.20 **61**, 85.3.19 **49**, 85.3.18 **66**, 85.3.17 **45**, 85.3.16 **60**, 85.3.15
+**63**, 85.3.14 **38**, 85.3.13 **37**, 85.3.12 **32**, 85.3.11 **22**, 85.3.10 **32**, 85.3.9
+**46**, 85.3.8 **57**, 85.3.7 **66**, 85.3.6 **75**, 85.3.4 **243**, 85.3.3 **235**, 85.3.2
+**213** and the 85.3.0/85.3.1 **204** sets. Both OTA channels rebuilt to a fixed point
+(`1349515 -> 1352187 -> 1351655 -> 1351655`) and verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1351655 bytes**, `ota-play/updates.json` **1351669 bytes**. Page-only: no native change, so the
+APK is not rebuilt.
+
+Not checked, and this is the honest part: **no phone, and nothing was played.** The player answers
+`LOGIN_REQUIRED` ("Sign in to confirm you're not a bot") to this sandbox's address - tried again
+for this release, on three known music videos, so the cap could not be re-measured live here and
+the one-megabyte figure is this repository's own earlier measurement, not a fresh one. What that
+means: 1 MiB at 145 kbps is 57 s, which is the number in both reports and the reason the fix is
+shaped around the voice rather than around the picture; if the owner's phone turns out to be
+showing a film whose FILE is 57 s (the second mechanism this release also guards), the new length
+verdict catches that instead, and the two roads together cover both readings. Neither can be
+confirmed from here. The one-stream copy costs a second download while a sharp size is watched
+(360p, the same film) - that is the price of a sound track that is not cut, and a single-file
+picture no longer pays it at all because it is its own sound.
+
 ## 85.4 (November 26, 2026): the words follow the voice, the film is the whole song, and the split Studio tab reads
 
 Three pieces of work that were built under the rolled-over labels `85.3.20`, `85.3.21` and

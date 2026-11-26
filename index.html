@@ -20344,7 +20344,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // 85.3.19 - a size the owner picked by hand (`manualH`), which the rate never takes away.
     rungs: [], rung: null, want: 0, manualH: 0, wide: false,
     wasPlaying: true, posing: false, watch: null, watchToken: 0, swapAt: 0, owns: false,
-    idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false,
+    idle: null, idleOn: false, scrubbing: false, scrubFrac: null,     drops: 0, retries: 0, srcNow: '', vidLen: 0, wrongTried: false, voiceOne: false, shortSeen: 0, shortFor: '', shortSteps: 0,
     deadH: {}, app: {}, rescueH: {}, songKey: '', loadSeq: 0, openedAt: 0, coverOn: false,
     // 85.3.21 - one search for a full-length film per song (`clipTried`). A film that came
     // back shorter than half the song is a teaser, and it is never played as the video: the
@@ -20516,6 +20516,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // refused stream falls through to.
   function scVideoLadder(muxed, adaptive, snd){
     var byH = {};
+    // 85.5 - THE ONE-STREAM COPY IS THE FILM'S SOUND WHEN THERE IS ONE.
+    //
+    // MEASURED, AND THE REASON A FILM DIES AT ABOUT A MINUTE: for a music upload the
+    // source caps an AUDIO-ONLY stream at its first megabyte (the downloader's own note
+    // in this file, measured: 403 past it) while the progressive one-stream copy of the
+    // same upload is not capped. One megabyte of a 145 kbps audio row IS fifty-seven
+    // seconds - so a sharp size, which carries no sound of its own and is paired with
+    // that audio row, had a soundtrack that ended a minute into a three-minute film.
+    // The picture is still the sharp one; its voice is the one-stream copy, which runs
+    // the whole film. Where an upload has no one-stream copy the audio row is still the
+    // voice, because a song with no sound at all is worse than a short one.
+    var muxVoice = null;
+    (muxed || []).forEach(function(r){
+      if(muxVoice || !r || !r.url) return;
+      if(!scVideoCanPlay(r.mime)) return;
+      muxVoice = r;
+    });
     function seat(row, isMux){
       var raw = Number(row && row.h) || 0;
       var h = scVideoStd(raw);
@@ -20545,6 +20562,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(!top && scVideoCanPlay(b.rows[i].mime)) top = b.rows[i];
       }
       if(!top) top = b.rows[0];
+      // A single-file picture IS its own sound - pairing it with a second copy would
+      // play the same recording twice. Only a sharp picture (which carries no sound at
+      // all) needs a voice, and that voice is the single-file copy, never the audio row
+      // the site cuts at a megabyte (85.5).
+      var voice = top.muxed ? null : (muxVoice || snd);
       var alts = [];
       for(var j = 0; j < b.rows.length && alts.length < 3; j++){
         if(b.rows[j] === top) continue;
@@ -20555,11 +20577,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
         h: b.h, label: scVideoSizeLabel(b.h), tag: scVideoRungTag(b.h),
         url: top.url, mime: top.mime, size: Number(top.size) || 0,
         muxed: !!top.muxed, codec: scVideoCodec(top.mime), alts: alts,
-        // THE VOICE IS THIS VIDEO'S OWN AUDIO ROW, whether or not the picture
-        // carries a copy of it. It is what the equalizer can reach.
-        audioUrl: snd ? snd.url : '',
-        audioMime: snd ? snd.mime : '',
-        audioSize: snd ? (Number(snd.size) || 0) : 0,
+        // THE VOICE IS THIS VIDEO'S OWN SOUND, whether or not the picture carries a
+        // copy of it. On a size with no sound of its own it is the one-stream copy
+        // (85.5: the audio-only row is capped at a megabyte, the one-stream copy is
+        // not), and only an upload with no one-stream copy falls back to the audio row.
+        audioUrl: voice ? scVideoNoRange(voice.url || '') : '',
+        audioMime: voice ? String(voice.mime || 'audio/mp4') : '',
+        audioSize: voice ? (Number(voice.size) || 0) : 0,
+        // A one-stream voice is a video file, so it is played as a link and never read
+        // into memory: it is the whole film, not a few-megabyte track.
+        audioOne: !!(voice && voice === muxVoice),
         // Whether the element claims it can decode the row this height resolved to.
         // A height whose only row it cannot open is offered as a marked row, never
         // as the default.
@@ -20931,6 +20958,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       v.addEventListener('timeupdate', scVideoClock);
       v.addEventListener('loadedmetadata', function(){
         scVideoSpin(false);
+        // 85.5 - HOW LONG THIS FILE REALLY IS, before anything trusts a length claim.
+        scVideoShortCheck(v);
         // The picture starts where it was, so a size change is not a rewind.
         if(scVideoState.startAt != null){ scVideoPose(v, scVideoState.startAt); scVideoState.startAt = null; }
         scVideoPoseTry(v);
@@ -20977,6 +21006,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
       aux.addEventListener('error', function(){
         if(scVideoState.audioMode !== 'aux') return;
         scVideoAuxFallBack('the phone refused to open it');
+      });
+      // 85.5 - A SOUND THAT RUNS OUT IS NOT A FILM THAT ENDED. The voice was the one
+      // thing that could end while the picture still had minutes to run - and because
+      // the film owns the sound, the tab then sat in silence on a moving picture. A
+      // voice that reaches its end early hands the sound on (the one-stream copy the
+      // picture may be, or the song under it) and the film keeps playing.
+      aux.addEventListener('ended', function(){
+        if(scVideoState.audioMode !== 'aux') return;
+        var pv = scVideoEl('scVideoEl');
+        if(pv && pv.ended) return;                             // both finished: the film ended
+        var film = (pv && isFinite(pv.duration) && pv.duration > 0) ? Number(pv.duration) : 0;
+        var at = pv ? (Number(pv.currentTime) || 0) : 0;
+        if(film > 0 && at >= film - 0.6) return;               // the picture is at its end too
+        scVideoAuxFallBack('the sound ran out first');
       });
     }
   }
@@ -21103,7 +21146,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var fn = (typeof window !== 'undefined' && window) ? window.scVideoEqChain : null;
       if(typeof fn !== 'function') return;
       var v = scVideoEl('scVideoEl'), a = scVideoEl('scVideoAuxEl');
-      if(scVideoState.audioMode === 'aux' && a && a.src) fn(a);
+      // A ONE-STREAM VOICE IS NOT PUT IN THE GRAPH. An element from another origin fed
+      // through a MediaElementSource plays silence, and this one is the whole film's
+      // sound: it is heard directly, and the picture keeps the graph instead.
+      if(scVideoState.audioMode === 'aux' && a && a.src && !scVideoState.voiceOne) fn(a);
       else if(v && v.src) fn(v);
     }catch(_eGraph){}
   }
@@ -22405,13 +22451,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // in the element the app can filter. A one-stream row is only heard directly when
     // there is no audio row at all to pair it with.
     scVideoState.audioMode = rung.audioUrl ? 'aux' : (rung.muxed ? 'video' : 'song');
+    scVideoState.voiceOne = !!rung.audioOne;
     scVideoVoiceReset();
     scVideoState.resumeAt = at;
     scVideoQualityMark();
     scVideoFoot((rung.muxed
       ? 'This stream carries its own sound - the song waits where you left it.'
       : (rung.audioUrl
-        ? 'The picture and the same video soundtrack are two streams, played together.'
+        ? (rung.audioOne
+          ? 'The picture and the film\u2019s own one-stream copy are played together, so the sound runs the whole film.'
+          : 'The picture and the same video soundtrack are two streams, played together.')
         : 'No audio in this stream - the song plays under the picture.')) + scVideoSyncNote());
     scVideoAttach(rung.url, 'direct', switching);
     scVideoTickStart();
@@ -22626,6 +22675,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scVideoState.via = via;
     scVideoState.blocked = false;
     scVideoState.watchMore = 0;              // a new source gets its own two windows
+    scVideoState.shortSeen = 0;              // and its own length verdict (85.5)
     // AND ITS OWN FIRST FRAME. The canvas still holds the last picture of the size that
     // was left, so it may not cover the stage again until it holds this one.
     scVideoState.fxPainted = 0;
@@ -22706,6 +22756,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoVoice(r){
     if(!r || !r.audioUrl) return '';
+    // THE ONE-STREAM VOICE IS PLAYED, NOT HELD. It is a video file carrying the whole
+    // film's sound; reading it to have the equalizer reach it would hold the film twice
+    // in memory, so it stays a link (scVideoGraphSync keeps it out of the graph).
+    if(r.audioOne) return r.audioUrl;
     var st = scVideoState.voice;
     if(st && st.for === r && st.blob) return st.blob;
     if(!st || st.for !== r){
@@ -22716,6 +22770,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scVideoVoiceRead(r, st){
     if(!st || st.reading) return;
+    if(r && r.audioOne) return;                              // a link, not a read (85.5)
     if(typeof scFetchBytes !== 'function') return;
     var size = Number(r.audioSize) || 0;
     if(size > SC_VQ_VOICE_MAX) return;                       // a film's audio is a few megabytes
@@ -23700,6 +23755,51 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoFoot('Matched to this song \u00b7 ' + cands.length + ' result' + (cands.length === 1 ? '' : 's') + (cands.length > 1 ? ' \u00b7 NEXT for another' : ''));
       return scVideoLoad(cands[0]);
     });
+  }
+
+  // 85.5 - A FILM THAT DECODES SHORTER THAN THE SONG IS NOT THIS SONG'S VIDEO.
+  //
+  // Everything before this trusted a LENGTH: 85.3.21's scVideoState.vidLen (the player's
+  // own lengthSeconds) decided whether a film was a clip before it was attached, and the
+  // rank decided it from the search's own text. A phone is handed something else often
+  // enough - a teaser, a "video song" cut, an upload whose file does not honour the length
+  // the answer claimed - and the one witness to that is the element that has just decoded
+  // the file. So the first thing a film does after its metadata lands is say how long it
+  // really is, and a film under SC_VQ_FULL_SHARE of the song is never played as this
+  // song's video: it is stepped past on NEXT's road, and when nothing better is left the
+  // cover and the song take the tab. This is the net under a length that was wrong in the
+  // answer, in the search, or in both - the fault that made a three-minute song show a
+  // fifty-seven second film and stop there.
+  function scVideoShortCheck(v){
+    if(!v || scVideoState.coverOn) return false;
+    if(scVideoState.shortSeen) return false;                  // one verdict per attach
+    var film = (isFinite(v.duration) && v.duration > 0) ? Number(v.duration) : 0;
+    if(!film) return false;
+    var song = 0;
+    try{ song = scVideoSongLen(); }catch(_eShortSong){ song = 0; }
+    if(!(song > 0)) return false;                             // an unknown song takes nothing away
+    if(!(film < song * SC_VQ_FULL_SHARE)){
+      // It IS the film. Nothing to do, and its own second is the one that is trusted now.
+      scVideoState.shortSeen = 1;
+      return false;
+    }
+    scVideoState.shortSeen = 1;
+    var key = String(scVideoState.songKey || '');
+    if(scVideoState.shortFor !== key){ scVideoState.shortFor = key; scVideoState.shortSteps = 0; }
+    var offNote = 'That video runs ' + scVideoMMSS(film) + ' for a ' + scVideoMMSS(song) + ' song';
+    var cands = scVideoState.cands || [];
+    // FOUR FILMS THAT ARE ALL CUTS IS A VERDICT, not a reason to keep walking the list.
+    if(cands.length > 1 && scVideoState.shortSteps < 4){
+      scVideoState.shortSteps++;
+      scVideoFoot(offNote + ' - that is a cut of it, not the video. Trying the next one.');
+      scVideoNext();
+      return true;
+    }
+    try{ v.pause(); }catch(_eShortPause){}
+    scVideoFoot(offNote + ' - no full video of this song was found.');
+    scVideoNoVideo(scVideoTrack() || scVideoState.last,
+      offNote + ' - no full video of this song was found, so the song plays on.');
+    return true;
   }
 
   function scVideoNext(){
@@ -25091,7 +25191,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.4';
+  const APP_VERSION = '85.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25801,6 +25901,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.5', date: 'November 26, 2026', title: 'A music video runs its whole length: the sharp picture takes its sound from the copy that is not cut, and a film that is really shorter than the song is not the video', items: [
+      'A music video no longer goes quiet about a minute in. The sharp sizes carry no sound of their own, so the app pairs them with the same video’s audio — and for a music upload the site serves that audio cut off at its first megabyte, which is about fifty-seven seconds of a three-minute film. The sharp picture now takes its sound from the same video’s single-file copy, which is not cut. The picture stays sharp and the sound runs to the last frame.',
+      'A video that really is shorter than the song is never shown as the video any more. The moment a film says how long it actually is, one under half the song is stepped past for the next result; when nothing better is left, the cover is the picture and the song plays on — instead of a minute of somebody’s cut and then silence.',
+      'If a soundtrack does run out before the picture, the film keeps playing: the sound hands on to the single-file copy, or to the song under the picture, rather than the tab sitting in silence on a moving picture.',
+      'The line under the picture says which of those is happening, so the size, the sound and the song underneath are never a guess.'
+    ] },
     { version: '85.4', date: 'November 26, 2026', title: 'The words follow the voice, the film is the whole song, and the split Studio tab reads on the tab you are on', items: [
       'With a Gemini key set, the lyrics are timed from the recording itself: the song\u2019s own audio goes with the request, so each line is placed against the voice singing it instead of against a share of the song\u2019s length. A sheet that already arrived with timestamps can be timed again, and the old ones are no longer sent to the model with the words.',
       'The song whose lyrics are open is the song that gets timed, whichever list it came from: a song played straight from a search used to answer \u201cNo track info.\u201d and could never use the key.',
