@@ -18,6 +18,82 @@ shipped release's number would make two builds claim one version `--` but everyt
 follows the rule above, and any unpublished work is rolled into the next legal number instead of
 getting a made-up label.
 
+## 85.7 (November 27, 2026): the film's SOUND is measured by its own length, and a cut is looked past instead of frozen on
+
+**The owner's report**: "it doesn't go past 57 seconds it just stops and the regular audio
+without the music video". That is the music-video tab handing its sound over at fifty-seven
+seconds and then playing the ordinary song - which is what 85.5's own `ended` road does when the
+voice runs out, and what 85.3.21's hand-back does when a short film reaches its end. Both were
+still reachable because nothing measured the SOUND, and the film's cut verdict had exactly one
+chance to run.
+
+**THE SOUND COPY IS A FILE OF ITS OWN AND NOBODY MEASURED IT.** A sharp picture carries no
+sound, and 85.5 pairs it with the same film's single-file copy. An upload with no single-file
+row still falls back to the audio-only row (`voice = top.muxed ? null : (muxVoice || snd)`), and
+the source cuts that row at its first megabyte - about fifty-seven seconds of a three-minute
+song. So the voice ended a minute in, the `ended` listener handed the sound to the song, and the
+tab played the ordinary audio under a film it had muted. New `scVideoVoiceCut(a)` reads the
+voice's own duration against the picture's (within two seconds, or half the film for a very
+short one), latched once per attach by `voiceCutSeen` (cleared in `scVideoAttach`), and answers
+before a second of it is heard: when the answer has the whole film as a single file,
+`scVideoWholeRung()` picks the tallest one the element accepted and `scVideoApplyRung` makes it
+the PICTURE - one file, its own sound, from the second the film had reached - and otherwise
+`scVideoAuxFallBack` hands the sound to the song at once, with the footer naming the length.
+Unknown lengths take nothing away.
+
+**AND A FILM THAT RAN OUT IS A CUT, NOT A HAND-BACK.** 85.3.21's hand-back in `scVideoSync`
+returns the sound the moment a short film ends, and leaves the tab on the film's last frame
+while the song plays - which is the second half of the report. `scVideoCutNext(film, song)` now
+runs first: with another result to try it steps there on NEXT's own road (same cap as the cut
+verdict - four per song, `shortFor`/`shortSteps`), and only when there is nothing else does the
+85.3.21 hand-back stand exactly as it was.
+
+**AND THE CUT VERDICT COULD BE LOST BEFORE IT RAN.** 85.5's `scVideoShortCheck` ran on
+`loadedmetadata` only, and it takes nothing away when either length is unknown - which is
+normal at that first moment (an element that has not published its own duration yet). One
+chance, at the worst time: a file that was really 0:57 could play to its end without ever being
+judged. The verdict now listens on `durationchange` as well, and `scVideoSync` asks again every
+tick (`shortSeen` still makes it one verdict per attach), so a length that arrives late is still
+a length.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-857.cjs` passes **41 assertions, 0 failed**. `scVideoVoiceCut` is the
+shipped one, run in a vm with the real `scVideoWholeRung`/`scVideoMMSS` beside it: a 0:57 sound
+under a 3:00 film is refused with the number on the footer, the song takes the sound at once when
+there is no single-file copy, a trailing single-file rung becomes the picture (tallest one that
+opens, `no` rows skipped) and no hand-back happens on top of it, a sound as long as the film, an
+exactly-half sound and one two seconds short are all left alone, an unknown film length and an
+unknown sound length take nothing away (and leave the latch free for a later verdict), nothing is
+judged twice on one attach, a size that carries its own sound has no voice to judge, and no
+element is not a verdict. `scVideoCutNext` is driven: two results step to the next one and count
+it, a lone result leaves the hand-back alone, four steps is a verdict, and a new song starts its
+own count; the hand-back's own ending is asserted where it sits, after the search. The wiring is
+read: `durationchange` on the picture judging the film, the metadata listener still there,
+`scVideoVoiceCut` on the aux's metadata and `durationchange`, the tick asking about the sound,
+`voiceCutSeen` cleared per attach. Release facts: 10 inline scripts parse, the page and the shell
+cache are 85.7, one `85.7` entry above 85.6 with no word the Play channel filters, and the
+version is two parts or one digit after the second. Every earlier gate still passes: 85.6
+**49**, 85.5 **46**, 85.3.22 **25**, 85.3.21 **43**, 85.3.20 **61**, 85.3.19 **49**, 85.3.18
+**66**, 85.3.17 **45**, 85.3.16 **60**, 85.3.15 **63**, 85.3.14 **38**, 85.3.13 **37**, 85.3.12
+**32**, 85.3.11 **22**, 85.3.10 **32**, 85.3.9 **46**, 85.3.8 **57**, 85.3.7 **66**, 85.3.6
+**75**, 85.3.4 **243**, 85.3.3 **235**, 85.3.2 **213** and the 85.3.0/85.3.1 **204** sets. Two
+gates needed the new functions in their sandbox lists (85.3.18 and 85.3.21, each with a note);
+no assertion was rewritten. Both OTA channels rebuilt to a fixed point
+(`1355000 -> 1356659 -> 1356252 -> 1356252`) and verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1356252 bytes**, `ota-play/updates.json` **1356267 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
+Not checked, and this is the honest part: **no phone, and nothing was played.** Nothing was
+streamed or listened to from this sandbox, so what is proven is the rule (a short sound copy is
+refused at its metadata, a cut is stepped past, the cut verdict can no longer be missed) - not
+that the particular upload in the report is now whole. If the fifty-seven seconds comes back,
+the number to read is the footer: it now says which of the three roads was taken (the length of
+the sound copy, the single-file copy taking the picture, or the song taking the sound), and
+whether a next result was tried.
+
 ## 85.6 (November 27, 2026): the word that lights is the one being sung, and the film's sound is never stretched or stopped under it
 
 **The owner's report**: "now the lines are correct for the lyrics but the word it's on isn't and

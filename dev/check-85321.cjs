@@ -150,7 +150,12 @@ function line(needle) {
   {
     const src = [
       line('var SC_VQ_FULL_SHARE'),
-      grab('scVideoSync')
+      grab('scVideoSync'),
+      // 85.7 added two verdicts the shipped scVideoSync/scVideoAttach now read: the sound
+      // copy's own length and the look-past for a film that ran out. They are part of the
+      // unit this harness drives; every assertion below is unchanged.
+      grab('scVideoShortCheck'), grab('scVideoVoiceCut'), grab('scVideoWholeRung'),
+      grab('scVideoCutNext'), grab('scVideoMMSS')
     ].join('\n');
 
     const sync = (o) => {

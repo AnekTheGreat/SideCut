@@ -59,7 +59,12 @@ const UNIT = [
   grab('scVideoPosKey'), grab('scVideoPosMap'), grab('scVideoPosRead'), grab('scVideoPosWrite'),
   grab('scVideoPosSave'), grab('scVideoPosClear'), grab('scVideoPosTick'),
   grab('scVideoAttach'), grab('scVideoTap'), grab('scVideoTransport'),
-  grab('scVideoSync'), grab('scVideoParkSong')
+  grab('scVideoSync'), grab('scVideoParkSong'),
+  // 85.7 added two verdicts the shipped scVideoSync/scVideoAttach now read: the sound
+  // copy's own length and the look-past for a film that ran out. They are part of the
+  // unit this harness drives; every assertion below is unchanged.
+  grab('scVideoShortCheck'), grab('scVideoVoiceCut'), grab('scVideoWholeRung'),
+  grab('scVideoCutNext'), grab('scVideoMMSS')
 ].join('\n');
 
 const EXPORTS = ['scVideoPosKey', 'scVideoPosMap', 'scVideoPosRead', 'scVideoPosSave',
