@@ -15652,8 +15652,23 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       t.lyricsSynced = true;
       // A new line timing makes the word timing measured against the old one stale: the
       // words are paced inside the windows these new stamps draw.
-      try{ delete scWordTimes[_aiSid]; }catch(_eWordDrop){}
-      try{ dbPut('meta', { key: 'lyricWords_' + _aiSid, value: null }); }catch(_eWordDropDb){}
+      // 85.6 - AND UNDER THE NAME THE PACER ACTUALLY READS. The measurement is kept under
+      // scWordTrackId() - the queue entry for a library song, the source's own id for a
+      // song from the source - which is not always the sheet id cleared below. Both go, so
+      // a new timing is never paced by starts measured against the old one.
+      try{
+        var _wordIds = [_aiSid];
+        try{
+          if(typeof scWordTrackId === 'function'){
+            var _wtid = scWordTrackId();
+            if(_wtid && String(_wtid) !== String(_aiSid)) _wordIds.push(String(_wtid));
+          }
+        }catch(_eWordTrack){}
+        for(var _wi = 0; _wi < _wordIds.length; _wi++){
+          try{ delete scWordTimes[_wordIds[_wi]]; }catch(_eWordDrop){}
+          try{ dbPut('meta', { key: 'lyricWords_' + _wordIds[_wi], value: null }); }catch(_eWordDropDb){}
+        }
+      }catch(_eWordClear){}
       try{ scLyricsPersist(t); }catch(_ePersistAiTiming){}
       currentLyricsText = text;
       currentLyricsSynced = true;
@@ -16313,6 +16328,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return null;
   }
 
+  // 85.6 - IS THIS RECORD ABOUT THE TIMING THE SHEET HAS NOW? A record's lines are the
+  // stamps it measured, so if none of them is on the sheet any more the sheet was retimed
+  // after the measurement and its starts belong to another timing.
+  function scWordTimingMoved(rec, sheetText){
+    if(!rec || !rec.lines || !rec.lines.length) return false;
+    // Only a sheet that carries stamps can disagree about them: an untimed sheet has no
+    // timing to have moved, and re-measuring one would loop for ever.
+    try{ if(!scHasLrcStamps(sheetText)) return false; }catch(_eStamps){ return false; }
+    var rows = [];
+    try{ rows = scParseLrcLines(String(sheetText || '')); }catch(_eRows){ rows = []; }
+    if(!rows.length) return false;
+    for(var i = 0; i < rec.lines.length; i++){
+      var at = Number(rec.lines[i] && rec.lines[i].t);
+      if(!isFinite(at)) continue;
+      var found = false;
+      for(var k = 0; k < rows.length; k++){
+        var rowT = Number(rows[k] && rows[k].t);
+        if(isFinite(rowT) && Math.abs(rowT - at) <= 0.3){ found = true; break; }
+      }
+      if(!found) return true;
+    }
+    return false;
+  }
+
   // Take the measurement for the song on screen: from the meta store when it is there,
   // from the audio when it is not. Nothing blocks - the pacer keeps the syllable shape
   // until the numbers arrive, then re-picks the line.
@@ -16322,7 +16361,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!tid || !sheetText || scWordBusy) return;
     var len = String(sheetText).length;
     var known = scWordTimes[tid];
-    if(known && known.len === len) return;
+    if(known && known.len === len){
+      // A VERDICT IS NOT A TIMING. `hop: 0` means "nothing to measure here", and asking
+      // again in a second and a half would decode the same file for ever.
+      if(!Number(known.hop)) return;
+      // 85.6 - THE TIMING IS WHAT HAS TO MATCH, NOT THE CHARACTER COUNT. A retimed sheet
+      // (the model's pass, a nudge) keeps almost every character it had, so the old test
+      // said "already measured" and the words stayed paced by starts whose stamps are not
+      // on the screen any more. That is a line that is right with the wrong word lit in
+      // it; the measurement is taken again instead.
+      if(!scWordTimingMoved(known, sheetText)) return;
+      try{ delete scWordTimes[tid]; }catch(_eMoved){}
+    }
     // 85.3.15 - a song still being read has no bytes yet. The poll asks again, but not
     // twenty times a second: one attempt per second and a half until the read lands.
     if(Date.now() - scWordTryAt < 1500) return;
@@ -16381,7 +16431,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
             .filter(function(w){ return !/^\s+$/.test(w); });
           if(!words.length) continue;
           var st = scWordStartsForWindow(words.length, from, to, env, hop);
-          if(st) lines.push({ t: from, w: st });
+          // 85.6 - THE LINE'S OWN WORDS GO IN THE RECORD WITH ITS STARTS. A timing can be
+          // replaced without a word of the sheet changing - the model re-times it (85.4), a
+          // nudge moves it, a film's clock is a different timeline - and then the stamp
+          // these starts were measured against is not the stamp on the screen. The words
+          // are what still names the line, so they are kept beside its starts.
+          if(st) lines.push({ t: from, w: st, x: words.join(' ').toLowerCase() });
         }
         if(!lines.length){ scWordTimes[tid] = { len: len, hop: 0, lines: [] }; return; }
         var rec = { len: len, hop: hop, lines: lines };
@@ -16391,6 +16446,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
         lastLyricsIdx = -1;                                 // re-pick the live line now
       }catch(_eMeasure){} finally { scWordBusy = false; }
     })();
+  }
+
+  // 85.6 - THE WORDS OF A LINE, AS ITS RECORD KEEPS THEM. The measurement writes each
+  // line's own units beside its starts, so a line can be recognised by what is sung in it
+  // and not only by the stamp it carried when it was measured.
+  function scLineWordsKey(lineEl){
+    try{
+      var t = String((lineEl && lineEl.textContent) || '');
+      return scPaceSegments(t.replace(scLrcTagRe(), ' ').replace(/\s+/g, ' ').trim())
+        .filter(function(w){ return !/^\s+$/.test(w); }).join(' ').toLowerCase();
+    }catch(_eKey){ return ''; }
   }
 
   // The starts this line is paced by, or null to keep the syllable shape. A line whose
@@ -16404,6 +16470,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(rec && rec.lines && rec.lines.length && isFinite(stamp)){
       for(var i = 0; i < rec.lines.length; i++){
         if(Math.abs(rec.lines[i].t - stamp) <= 0.25 && rec.lines[i].w && rec.lines[i].w.length === nWords) return rec.lines[i].w;
+      }
+    }
+    // 85.6 - AND BY ITS WORDS WHEN THE STAMP HAS MOVED. A retimed sheet (the model's pass,
+    // a nudge, a film's clock) keeps its words, and the words are sung at the same seconds
+    // whatever stamp the sheet puts in front of them. Without this the line joined nothing,
+    // the starts fell through to an even share of the window, and the line was right while
+    // the word in it was not - the report.
+    if(rec && rec.lines && rec.lines.length){
+      var key = scLineWordsKey(lineEl);
+      if(key){
+        for(var j = 0; j < rec.lines.length; j++){
+          if(rec.lines[j] && rec.lines[j].x === key && rec.lines[j].w && rec.lines[j].w.length === nWords) return rec.lines[j].w;
+        }
       }
     }
     if(scWordEnv && scWordEnv.id === tid){
@@ -20383,6 +20462,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var SC_VQ_MIN_CLOCK = 0.55;              // with no frame counter, this much of real time is the floor
   var SC_VQ_PERF_MS = 2500;                // the window a rate is measured over
   var SC_VQ_PERF_ROUNDS = 2;               // that many bad windows in a row before the picture steps back
+  var SC_VQ_VOICE_GRACE = 1.2;             // how far the sound may run ahead of a picture that is waiting for bytes
   var SC_VQ_RATE_STEPS = 4;                // how many sizes the rate may give up for one film
   var SC_VQ_FULL_SHARE = 0.5;              // a clip shorter than half the song is a teaser, not its video
   var SC_VQ_STREAM_MAX_AHEAD = 16 * 1048576; // the app's own buffer is a window, not a copy of a 4K film
@@ -20510,6 +20590,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return { url: scVideoNoRange(row.url || ''), mime: row.mime || 'audio/mp4', size: Number(row.size) || 0 };
   }
 
+  // WHICH SINGLE-FILE COPY IS THE VOICE. Every single-file copy of one upload carries the
+  // same sound, so the only thing the choice changes is how many bytes the tab pulls while
+  // it is already streaming a sharp picture - and a voice as heavy as the picture is a
+  // picture that waits for it, which is a film that stops and starts. The smallest copy is
+  // the sound, and the picture keeps the connection.
+  function scVideoVoiceRank(r){
+    if(!r) return Infinity;
+    var size = Number(r.size) || 0;
+    if(size > 0) return size;
+    var bits = Number(r.bits) || 0;
+    if(bits > 0) return 5e9 + bits;            // after every copy whose weight is known
+    return 1e10 + (Number(r.h) || 0);
+  }
+
   // One rung per height the answer really offers. Rows of the same height are
   // ordered: muxed first (own sound, one stream), then the codec most likely to
   // decode here, then the bigger bitrate. The runner-ups become the alternates a
@@ -20527,10 +20621,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // The picture is still the sharp one; its voice is the one-stream copy, which runs
     // the whole film. Where an upload has no one-stream copy the audio row is still the
     // voice, because a song with no sound at all is worse than a short one.
-    var muxVoice = null;
+    // 85.6 - THE LIGHTEST SINGLE-FILE COPY IS THE VOICE. The first one in the answer can be
+    // the heaviest there is (a 720p progressive row is tens of megabytes for a song), and
+    // pulling that beside a sharp picture is what made the picture wait - so the smallest
+    // copy that this element can open is the one that plays the sound.
+    var muxVoice = null, muxRank = Infinity;
     (muxed || []).forEach(function(r){
-      if(muxVoice || !r || !r.url) return;
+      if(!r || !r.url) return;
       if(!scVideoCanPlay(r.mime)) return;
+      var rank = scVideoVoiceRank(r);
+      if(rank >= muxRank) return;
+      muxRank = rank;
       muxVoice = r;
     });
     function seat(row, isMux){
@@ -20949,8 +21050,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // A PICTURE THAT IS THINKING IS SILENT TOO. The voice used to keep running
       // while the frame waited for bytes, so it pulled ahead and then had to be
       // dragged back - a stutter you could hear.
-      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoFxStop(); scVideoAuxPause(); });
-      v.addEventListener('stalled', function(){ scVideoSpin(true); scVideoAuxPause(); });
+      // 85.6 - A PICTURE THAT IS WAITING IS NOT A REASON FOR SILENCE. The voice is its own
+      // stream; silencing it on every buffer dip and seeking it back on every return is a
+      // film that stops and starts for no reason the listener can hear. It carries on and
+      // the frame catches up, and the tick holds the sound only once the picture has
+      // fallen `SC_VQ_VOICE_GRACE` behind it.
+      v.addEventListener('waiting', function(){ scVideoSpin(true); scVideoIdleWake(); scVideoFxStop(); });
+      v.addEventListener('stalled', function(){ scVideoSpin(true); });
       // Any seek puts the voice on the frame's new second, however it was made.
       v.addEventListener('seeked', function(){ if(scVideoState.audioMode === 'aux') scVideoAuxAlign(); scVideoFxPaintOnce(); });
       v.addEventListener('canplay', function(){ scVideoSpin(false); scVideoWatchStop(); scVideoFxPaintOnce(); });
@@ -23106,19 +23212,32 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scVideoMuteOthers();
       if(s && s.src && s.readyState >= 1 && scVideoPosed(s)){
         var vt2 = Number(v.currentTime) || 0;
-        if(v.paused || v.readyState < 2){
+        if(v.paused || v.seeking){
           if(!s.paused) scVideoAuxPause();
         } else {
           var d = (Number(s.currentTime) || 0) - vt2;
-          // A TENTH, AND IT IS TRIMMED, NOT JUMPED. Two elements run at very
-          // slightly different rates, so the voice is allowed to run a hair fast or
-          // slow until it sits on the frame. Only a real gap - a buffered picture,
-          // a seek, a size change - is jumped.
-          if(Math.abs(d) > 0.6){
+          if(v.readyState < 2){
+            // 85.6 - THE SOUND OUTLASTS A HICCUP. The picture is a sharp stream the voice
+            // is sharing a connection with, so its buffer dips; the sound is not what
+            // should stop for a dip. It keeps playing until it has run
+            // `SC_VQ_VOICE_GRACE` ahead of the frame, and only then is it held - a picture
+            // that has fallen that far behind is the one case worth going quiet for.
+            if(d < SC_VQ_VOICE_GRACE){
+              try{ if(s.playbackRate !== 1) s.playbackRate = 1; }catch(_eSyncG){ }
+            } else if(!s.paused){
+              scVideoAuxPause();
+            }
+          } else if(Math.abs(d) > 0.6){
+            // A real gap - a buffered picture, a seek, a size change - is jumped.
             try{ s.currentTime = vt2; }catch(_eSync){ }
             try{ s.playbackRate = 1; }catch(_eSyncR){ }
           } else if(Math.abs(d) > 0.1){
-            try{ s.playbackRate = Math.max(0.92, Math.min(1.08, 1 - d * 0.5)); }catch(_eSyncT){ }
+            // A HAIR, NOT A DETUNE. Two elements run at very slightly different rates, so
+            // the voice is allowed to run a hair fast or slow until it sits on the frame -
+            // and a hair is two percent, because this element is the music: the old eight
+            // percent audibly bent the pitch of a song that was a tenth of a second off,
+            // which is what a voice speeding up and slowing down sounds like.
+            try{ s.playbackRate = Math.max(0.98, Math.min(1.02, 1 - d * 0.5)); }catch(_eSyncT){ }
           } else {
             try{ if(s.playbackRate !== 1) s.playbackRate = 1; }catch(_eSyncU){ }
           }
@@ -25191,7 +25310,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.5';
+  const APP_VERSION = '85.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -25901,6 +26020,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+    { version: '85.6', date: 'November 27, 2026', title: 'The lit word is the one being sung, and the music video’s sound is no longer stretched or switched off under it', items: [
+      'The word being lit is the one being sung again. When a sheet was timed a second time — by the AI pass, by the timing nudge, or by the film’s own clock — its word-by-word timing was left behind, every line fell back to sharing its words out evenly, and that is a line that is right with the wrong word inside it. That timing is now recognised by the words of the line, not only by the timestamp in front of it, so it stays with the line it was measured on.',
+      'A sheet that was timed again is measured again: the old timing is only reused while the stamps on the screen are the ones it was measured against, instead of for as long as the sheet happens to have the same number of characters.',
+      'The word timing is cleared under both of the names the app keeps it by, so a song opened from a search can never keep the word timing of the timing it had before.',
+      'The music video’s sound no longer speeds up and slows down. The voice under a sharp picture was being bent by up to eight percent to keep it on the frame, which is a song audibly changing pitch; it is two percent at most now, and only when it is a tenth of a second out.',
+      'The film no longer stops for a buffer dip. The picture could be waiting for bytes and the sound was switched off with it, then jumped back on when the frame returned — a film stopping and starting. The sound now carries on, and is only held once the picture has fallen more than a second behind it.',
+      'The sound a sharp picture plays is the lightest copy of the film the answer has, not the first one listed: every copy of one upload carries the same sound, and a heavy one was taking the connection the picture needed.'
+    ] },
     { version: '85.5', date: 'November 26, 2026', title: 'A music video runs its whole length: the sharp picture takes its sound from the copy that is not cut, and a film that is really shorter than the song is not the video', items: [
       'A music video no longer goes quiet about a minute in. The sharp sizes carry no sound of their own, so the app pairs them with the same video’s audio — and for a music upload the site serves that audio cut off at its first megabyte, which is about fifty-seven seconds of a three-minute film. The sharp picture now takes its sound from the same video’s single-file copy, which is not cut. The picture stays sharp and the sound runs to the last frame.',
       'A video that really is shorter than the song is never shown as the video any more. The moment a film says how long it actually is, one under half the song is stepped past for the next result; when nothing better is left, the cover is the picture and the song plays on — instead of a minute of somebody’s cut and then silence.',

@@ -479,6 +479,8 @@ function answer(formats, adaptive){
   ok('a paused picture silences the soundtrack', aux.paused === true);
   video.paused = false; aux.paused = false;
   fire(video, 'waiting');
+  // This harness runs the 85.3.x snapshot in dev/video-8533.js, not the shipped page: the
+  // buffer-dip rule 85.6 changed is driven by dev/check-856.cjs and by the live gates.
   ok('a picture waiting for bytes silences it too', aux.paused === true);
   aux.paused = false;
   video.currentTime = 44; aux.currentTime = 12;

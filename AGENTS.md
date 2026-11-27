@@ -18,6 +18,106 @@ shipped release's number would make two builds claim one version `--` but everyt
 follows the rule above, and any unpublished work is rolled into the next legal number instead of
 getting a made-up label.
 
+## 85.6 (November 27, 2026): the word that lights is the one being sung, and the film's sound is never stretched or stopped under it
+
+**The owner's report**: "now the lines are correct for the lyrics but the word it's on isn't and
+it keeps randomly stopping and speeding up and slowing down". The line was right and the word
+inside it was wrong, and the playback moved on its own. Two separate faults, and both are a
+number taken from somewhere other than the thing it describes.
+
+**THE WORD WAS PACED BY THE TIMING THAT HAD ALREADY BEEN REPLACED.** A word-by-word timing is
+measured inside each line's window and cached under `lyricWords_<id>` with the stamp it was
+measured against. 85.4 gave a sheet a second timing (the model's pass, when a key is set) and
+cleared that cache - but the pacer could not tell whether the record it loaded belonged to the
+sheet in front of it. `scWordMeasureKick` asked one question, "is this the same number of
+characters?", and a retimed sheet is almost exactly the same number of characters
+(`[00:12.00]` -> `[00:12.34]`), so a record measured against the old timing was reused for
+ever. `scMeasuredWordStarts` then joined a recorded line to the screen by its stamp within
+0.25 s, found nothing, and every line fell through to the syllable share - the words spread
+evenly across the window, which is exactly a line that is right with the wrong word lit in it.
+
+The record now carries the line's own words (`x`), and `scMeasuredWordStarts` joins a line by
+those words when its stamp has moved: the words are sung at the same seconds whatever stamp the
+sheet puts in front of them, so the measured starts still apply. And `scWordTimingMoved` asks
+whether ANY stamp of the record is still on the sheet; if none is, the sheet was retimed, the
+record is dropped and the measurement is taken again from the recording. A record with
+`hop: 0` is a verdict ("nothing here to measure") and is never re-decoded, and a sheet with no
+stamps has no timing to have moved. The AI pass also clears the record under **both** names it
+can be stored by - the sheet id and `scWordTrackId()` - because for a song opened from a search
+those are not always the same string.
+
+**AND THE SOUND WAS STRETCHED AND SWITCHED OFF UNDER THE PICTURE.** Two rules in the aux branch
+of `scVideoSync` were written for a small audio row, and 85.5 made that voice a whole film:
+
+- **IT WAS DETUNED TO STAY ON THE FRAME.** Drift between the two elements was corrected by
+  running the voice at up to 8% fast or slow (`0.92`-`1.08`). On a soundtrack that is a song,
+  that is an audible bend of the pitch, applied and released every tick - "speeding up and
+  slowing down". The clamp is 2% now (`0.98`-`1.02`), and a real gap is still jumped.
+- **IT WAS SILENCED BY EVERY BUFFER DIP OF THE PICTURE.** The tick paused the voice whenever
+  the picture's `readyState` was under 2, and the `waiting`/`stalled` events did the same. The
+  picture is a sharp stream the voice is sharing a connection with, so it dips; the sound
+  stopping and restarting on each dip is "randomly stopping". The sound now carries on while
+  the picture is behind - up to `SC_VQ_VOICE_GRACE` (1.2 s), and only past that is it held. A
+  pause or a seek still silences it, because those are the two cases where the frame is not
+  where the sound is.
+
+**AND THE VOICE WAS THE HEAVIEST COPY IN THE ANSWER.** `muxVoice` took the FIRST playable
+single-file row, which can be a 720p progressive row of tens of megabytes - pulled beside a
+sharp picture that is already streaming, on the same connection. Every single-file copy of one
+upload carries the same audio, so the choice changes nothing but the weight: `scVideoVoiceRank`
+ranks by bytes (a copy whose weight is stated outranks one that does not say) and the lightest
+copy this element can open is the voice. A single-file picture is still its own sound and gets
+no voice at all, which is 85.5 unchanged.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-856.cjs` passes **49 assertions, 0 failed**. `scVideoLadder` is the
+shipped one, run in a vm with the real `scVideoCanPlay`/`scVideoVoiceRank`/`scVideoStd` beside
+it: with three single-file copies of the same film listed heaviest first, the voice of a 1080
+rung is the lightest one and is marked `audioOne`; a lightest copy the element cannot open is
+skipped for the next; a copy that does not state its weight ranks after every copy that does;
+a single-file rung is still its own sound with no voice; an answer with no single-file copy
+still keeps its audio row. The aux rules are read where they sit and `SC_VQ_VOICE_GRACE` is
+asserted: the waiting branch, the hold past the grace, the pause/seek branch still silencing,
+the 2% clamp present and the 8% bend gone from the page, and the `waiting`/`stalled` listeners
+no longer calling `scVideoAuxPause` (the `pause` listener still does). The words are driven in
+another vm: `scLineWordsKey` names a line by its words however the whitespace falls and splits
+a Han run the way the pacer does; a record whose stamp moved is still paced by its own measured
+starts, with the recording not asked again; a word count that no longer matches is refused; an
+older record with no words in it still joins by its stamp; one whose stamp is gone and whose
+words were never kept joins nothing rather than guessing; the window measured off the recording
+this session is still the fallback, and with no recording and no record the syllable shape is
+kept; `scWordTimingMoved` says the same sheet is the same timing, a stamp inside the tolerance
+is still the same line, a line moved past it is a new timing, an untimed sheet has no timing to
+have moved, and an empty record is never "moved"; the measurement drops and re-takes when the
+timing moved, a verdict is never re-decoded, the old character-count test is gone, and the AI
+pass clears every name the words can be stored under. Every earlier gate still passes: 85.5
+**46**, 85.3.22 **25**, 85.3.21 **43**, 85.3.20 **61**, 85.3.19 **49**, 85.3.18 **66**, 85.3.17
+**45**, 85.3.16 **60**, 85.3.15 **63**, 85.3.14 **38**, 85.3.13 **37**, 85.3.12 **32**, 85.3.11
+**22**, 85.3.10 **32**, 85.3.9 **46**, 85.3.8 **57**, 85.3.7 **66**, 85.3.6 **75**, 85.3.4
+**243**, 85.3.3 **235**, 85.3.2 **213** and the 85.3.0/85.3.1 **204** sets. Twelve of them
+carried one assertion about a buffer dip, which was rewritten with a note in each file (the
+door no longer pauses the voice; the live gates assert it against the shipped page, and
+85.3.0-85.3.4 still assert the old behaviour because they run the frozen snapshots in
+`dev/video-85xx.js`, which were not touched). 85.5's ladder harness needed
+`scVideoVoiceRank` in its sandbox list, with a note; every one of its assertions is unchanged.
+Both OTA channels rebuilt to a fixed point (`1351655 -> 1354472 -> 1355000 -> 1355000`) and
+verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1355000 bytes**, `ota-play/updates.json` **1355015 bytes**. Page-only: no native change, so
+the APK is not rebuilt.
+
+Not checked, and this is the honest part: **no phone and nothing was played.** Nothing was
+streamed or listened to from this sandbox, so what is proven is which copy is chosen, which
+rule holds the sound, how much the voice may be bent, and which starts a line is paced by -
+not that a particular phone now holds its sound through a buffer dip, nor that a particular
+retimed sheet lands its words on the syllables. The report's two halves were read as the
+lyrics highlighting the wrong word inside a correct line (the word timing join) and the VIDEO
+stopping and changing speed; if the speed change the owner hears is the SONG under a picture
+with no sound of its own, that path is untouched here - it has no second element to trim - and
+the next report should say which of the two was moving.
+
 ## 85.5 (November 26, 2026): the film's sound is the copy that is not cut, and a short file is not the video
 
 **The owner's report**: "THE STUPID MUSIC VUDEO LITERALLY CANT HANDLE OVER 57 SECODNS NIGGA I

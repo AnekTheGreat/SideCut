@@ -48,7 +48,9 @@ function grab(name) {
 }
 
 // The pieces scVideoLadder really uses, so the ladder under test is the shipped one.
-const LADDER_BITS = ['scVideoCanPlay', 'scVideoCodec', 'scVideoRungTag', 'scVideoStd', 'scVideoSizeLabel', 'scVideoNoRange', 'scVideoLadder'];
+// 85.6 added the voice ranking to the shipped ladder, so it is part of the function this
+// harness drives; every 85.5 assertion below is unchanged.
+const LADDER_BITS = ['scVideoCanPlay', 'scVideoCodec', 'scVideoRungTag', 'scVideoStd', 'scVideoSizeLabel', 'scVideoNoRange', 'scVideoVoiceRank', 'scVideoLadder'];
 function ladderSandbox(rows) {
   const ctx = {
     window: {}, console: console,

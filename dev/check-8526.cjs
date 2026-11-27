@@ -453,8 +453,12 @@ function answer(formats, adaptive){
   fire(video, 'pause');
   ok('a paused picture silences the soundtrack', aux.paused === true);
   video.paused = false; aux.paused = false;
+  const auxWas = aux.paused;          // this harness's own state: the door must not change it
   fire(video, 'waiting');
-  ok('a picture waiting for bytes silences it too', aux.paused === true);
+  // 85.6 - a buffer dip no longer silences the sound: it carries on until the picture has
+  // fallen SC_VQ_VOICE_GRACE behind it, which is driven by dev/check-856.cjs. What this
+  // harness keeps proving is the door: the event no longer pauses the voice.
+  ok('a picture waiting for bytes no longer silences the sound', aux.paused === auxWas, aux.paused);
   aux.paused = false;
   video.currentTime = 44; aux.currentTime = 12;
   fire(video, 'seeked');
