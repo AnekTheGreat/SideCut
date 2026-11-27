@@ -18,6 +18,75 @@ shipped release's number would make two builds claim one version `--` but everyt
 follows the rule above, and any unpublished work is rolled into the next legal number instead of
 getting a made-up label.
 
+## 85.8 (November 27, 2026): a deck with nothing to play stops and says so, and a finished song is not an interrupted one
+
+**The owner's report**: "it keeps ghost playing audio from SideCut even tho I don't have anything
+playing", sent with a screenshot of another app's screen and SideCut's now-playing card in the
+shade - frozen at **02:31 / 02:31**, with a pause button, saying it was still going. Two faults,
+and the second one is the sound itself.
+
+**AN ENDED SONG SENDS NO `pause` EVENT.** `onPauseEvt` is the only door that pushes a paused media
+session for the deck (`mediaSetPlaybackState('paused')`), and the HTML media element does not fire
+`pause` when it reaches its end - it fires `ended` and sets `paused` to true silently. So a song
+that finished with nothing after it left the shade claiming SideCut was playing, at the song's
+last second, indefinitely. Nothing corrects it either: the thirty-second heartbeat returns early
+while the page is hidden and the element is paused, which is exactly that state.
+
+**AND THE REVIVE COULD NOT TELL "FINISHED" FROM "INTERRUPTED".** The background keep-alive
+restarts a paused deck element on the argument that the phone paused it, not the owner
+(`a.paused && !userPaused`). A song that reached its end is paused with `userPaused` clear - the
+same picture - and every failed advance returned from `playCurrent` BEFORE it changed the
+element's `src`, so `play()` restarted the SAME finished file from zero. In the background that
+is a song repeating itself forever, with no window open and nobody asking for it: the ghost.
+`ended` is the one witness that says "this did not pause, it finished", and both revive doors
+(the deck's and the stream's) now read it.
+
+**ONE DOOR FOR A DECK THAT HAS NOTHING TO PLAY.** New `scDeckRest(why)`: `userPaused` set (so
+nothing revives it), a fade in flight torn down, BOTH elements paused, the card pushed `paused`,
+the deck's hold and the wake lock given back, the heartbeat stopped, the wheel stopped and the
+button back on play, the reason written down once and the position saved. Every advance that
+could not start a song goes through it: `playCurrent`'s two early returns (the song is gone from
+the library; it has no audio file - the toast stays) and `hardAdvance`'s "nothing after this song"
+branch. And a song that ends settles itself: a listener inside the one `[audio, audio2].forEach`
+waits 1.5 s and, if the active element is still `ended` and no film and no stream has taken over,
+calls `scDeckRest`. A queue that is working is untouched - a song that did start is no longer
+`ended`, and a fade in flight is skipped - so this can never stop music that is playing.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-858.cjs` passes **31 assertions, 0 failed**. The shipped `scDeckRest` is
+cut out of `index.html` by name and braces and run in a vm against fake players: both elements are
+paused, the card is told `paused`, the hold is dropped and the wake lock released once, the
+heartbeat is stopped, the fade torn down, `userPaused` is set, the wheel stops with the play icon
+back, the reason is recorded once (and a rest with no reason still says something) and the
+position is saved. The wiring is read where it sits: both `playCurrent` early returns call it (and
+the missing-file toast survives), the rest happens before `a.src` is touched, `hardAdvance`'s
+no-wrap branch rests, both revive conditions carry `!ended`, the settle is registered inside the
+players' own loop with its three guards (crossfade, film sound, stream) and only fires for an
+element that really `ended`. Release facts: 10 inline scripts parse, the page and the shell cache
+are 85.8, one `85.8` entry sits above 85.7 with no word the Play channel filters, and the version
+is two parts with no third. Every earlier gate still passes: 85.7 **41**, 85.6 **49**, 85.5 **46**,
+85.3.22 **25**, 85.3.21 **43**, 85.3.20 **61**, 85.3.19 **49**, 85.3.18 **66**, 85.3.17 **45**,
+85.3.16 **60**, 85.3.15 **63**, 85.3.14 **38**, 85.3.13 **37**, 85.3.12 **32**, 85.3.11 **22**,
+85.3.10 **32**, 85.3.9 **46**, 85.3.8 **57**, 85.3.7 **66**, 85.3.6 **75**, 85.3.4 **243**,
+85.3.3 **235**, 85.3.2 **213** and the 85.3.0/85.3.1 **204** sets. (`dev/check-8535.cjs` still pins
+the exact string `85.3.5` and fails the same two version assertions on HEAD; it has not been part
+of the routine set since 85.3.6.) Both OTA channels rebuilt to a fixed point
+(`1356252 -> 1358021 -> 1357824 -> 1357824`) and verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1357824 bytes**, `ota-play/updates.json` **1357840 bytes**. Page-only: no native change, so the
+APK is not rebuilt.
+
+Not checked, and this is the honest part: **no phone, and nothing was played.** Nothing was
+streamed or listened to from this sandbox, so what is proven is where the truth is written and
+what a stopped deck does - not that the particular song in the report is the one that restarted.
+Two other players can make sound with no SideCut window: the widget's hidden host
+(`GhostPlayerActivity`) and `NativePlayService`. Neither is touched here. If the report comes
+back with a card that is gone from the shade and sound that is still audible, the next thing to
+look at is the hidden player's lifetime - its `ghostAudioOk` flag is set by the page on a resume
+and cleared only by another report, so it can outlive the song it was started for.
+
 ## 85.7 (November 27, 2026): the film's SOUND is measured by its own length, and a cut is looked past instead of frozen on
 
 **The owner's report**: "it doesn't go past 57 seconds it just stops and the regular audio

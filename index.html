@@ -25381,7 +25381,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.7';
+  const APP_VERSION = '85.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -26091,6 +26091,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  // 85.8 - A STOPPED DECK IS SILENT, AND THE CARD STOPS SAYING IT IS PLAYING.
+    { version: '85.8', date: 'November 27, 2026', title: 'A player with nothing left to play stops and says so, instead of a card in the shade claiming a song is still going', items: [
+      'A song that finishes with nothing after it is now silence, and the phone is told so. The last second of a song used to leave the now-playing card frozen at its end with a pause button - SideCut claiming it was still playing - because a song that reaches its end does not send the pause that normally updates the card.',
+      'And that frozen ending could bring the same song back by itself. The background keep-alive cannot tell a song that finished from one the phone paused, so half a minute later it started the finished file again from the beginning, silently, with nothing open and nobody asking for it.',
+      'Both are one door now: when an advance has nothing to start - the next song is gone from the library, its audio file is missing, or there is nothing after it - both players are stopped, the card says paused, the phone is allowed to sleep, and nothing tries to revive a player that has nothing to play.',
+      'A queue that keeps working is not touched: a song that did start is playing on its own element, so it is never mistaken for the one that ended.'
+    ] },
     { version: '85.7', date: 'November 27, 2026', title: 'The music video no longer stops at a minute: the sound it plays is checked by its own length, and a film that runs out is looked past instead of frozen on', items: [
       'A music video no longer goes quiet at about fifty-seven seconds and leaves the ordinary song playing under it. The sound a sharp picture plays is a copy of the film in its own right, so its own length is read the moment it knows it: when that copy is shorter than the film, the tab stops trusting it instead of finding out a minute later.',
       'When the answer has the same film as a single file, that copy becomes the picture itself - one file, its own sound, from the same second - so the whole film plays with the whole sound at once instead of two copies fighting over one of them.',
@@ -42935,8 +42942,15 @@ function _fallbackCopy(text){
   function playCurrent(hardSwitch){
     if(queueIndex < 0 || queueIndex >= queue.length) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(!t) return;
-    if(!t.file || !t.url){ toast('This song needs to be re-imported — the audio file is missing.'); return; }
+    if(!t){ scDeckRest('this song is not in the library any more'); return; }
+    if(!t.file || !t.url){
+      // 85.8 - A SONG THAT CANNOT PLAY STOPS THE DECK, IT DOES NOT LEAVE IT "PLAYING".
+      // This returned with the previous song's card still on the shade at its last
+      // second, and with `userPaused` clear so the background revive restarted it.
+      scDeckRest('"' + t.name + '" has no audio file');
+      toast('This song needs to be re-imported — the audio file is missing.');
+      return;
+    }
     if(hardSwitch) cancelCrossfade();
     // Safety: stop BOTH audio elements so two tracks can never overlap
     try{ audio.pause(); audio2.pause(); }catch(_){}
@@ -44845,6 +44859,39 @@ function _fallbackCopy(text){
   }
   window.__scPauseDeck = scPauseDeck;
 
+  // 85.8 - A DECK WITH NOTHING TO PLAY IS SILENCE, AND THE PHONE IS TOLD SO.
+  //
+  // Every advance that could not start a song used to just `return`, leaving the deck
+  // exactly where the last song ended it. Two things then kept a ghost alive. `ended`
+  // fires no `pause` event, so `onPauseEvt` - the only place that pushes a paused
+  // media session for the deck - never ran: the shade sat on a card frozen at the last
+  // second with a pause button, saying SideCut was playing when nothing was. And
+  // `userPaused` was never set, so the background heartbeat's revive saw an ordinary
+  // paused element and called `play()` again - and because the failed advance happened
+  // BEFORE the element's src was changed, that restarted the same finished file from
+  // zero, silently, in the background. One door ends both: both elements paused, the
+  // card honest, the hold and the wake lock given back, the heartbeat stopped, and
+  // `userPaused` set so nothing revives a deck that has no next song.
+  function scDeckRest(why){
+    userPaused = true;
+    try{ cancelCrossfade(); }catch(_eRestFade){}
+    try{ audio.pause(); audio2.pause(); }catch(_eRestPause){}
+    try{ mediaSetPlaybackState('paused'); }catch(_eRestState){}
+    try{ scHoldDrop('deck'); }catch(_eRestHold){}
+    try{ releaseWakeLock(); }catch(_eRestWake){}
+    try{ stopMediaSessionHeartbeat(); }catch(_eRestBeat){}
+    try{
+      $('npDisc').classList.remove('spinning');
+      $('npPlayerBody').classList.remove('playing');
+      $('npTt3d').classList.remove('playing');
+      $('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
+    }catch(_eRestUi){}
+    try{ syncLyricsPlayPauseIcon(); }catch(_eRestLyrics){}
+    try{ recordPlaybackStop('deck rest: ' + String(why || 'nothing to play')); }catch(_eRestRec){}
+    try{ savePlaybackState(true); }catch(_eRestSave){}
+  }
+  window.__scDeckRest = scDeckRest;
+
   function finishCrossfade(nextIndex){
     // Guard against double-execution: the fade-progress interval and the outgoing
     // track's natural 'ended' event can both try to finish the SAME crossfade in
@@ -44964,7 +45011,7 @@ function _fallbackCopy(text){
       // with the option off it answers null and this wraps inside the album
       // exactly as it always did.
       if(dir > 0 && scAlbumRollQueue(1) >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
-      if(wrap) next = 0; else { $('npDisc').classList.remove('spinning'); return; }
+      if(wrap) next = 0; else { scDeckRest('there is nothing after this song'); return; }
     }
     queueIndex = next;
     gaplessPreloadedFor = null;
@@ -46050,7 +46097,13 @@ function _fallbackCopy(text){
       // case where Android reclaimed memory and the old URL went dead while suspended.
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
-      if(a.paused && !userPaused && !audioFocusInterrupted && !scInCall() && scReviveAllowed()
+      // 85.8 - A FINISHED SONG IS NOT AN INTERRUPTED ONE. `ended` leaves the element
+      // paused with `userPaused` clear, which is exactly what the OS pausing us looks
+      // like - so this revive called play() on a song that had just finished, and
+      // play() on an ended element starts it again from zero. In the background that
+      // is a file repeating itself forever with no one asking for it. `ended` is the
+      // one witness that says "this did not pause, it finished".
+      if(a.paused && !a.ended && !userPaused && !audioFocusInterrupted && !scInCall() && scReviveAllowed()
          && !scStreamPhoneOwns()
          && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
@@ -46093,7 +46146,7 @@ function _fallbackCopy(text){
         const sa = scStreamState.audio;
         // 85.2.1 - unless the music video tab is playing: this thirty-second revive
         // is what used to start the song again over a film that was already sounding.
-        if(sa && sa.paused && !window.__scVideoSoundOwn && !scStreamState.userPaused && !audioFocusInterrupted && !scInCall()){
+        if(sa && sa.paused && !sa.ended && !window.__scVideoSoundOwn && !scStreamState.userPaused && !audioFocusInterrupted && !scInCall()){
           scStreamState.revives = (Number(scStreamState.revives) || 0) + 1;
           if(scStreamState.revives <= 20){
             Promise.resolve(sa.play()).catch(function(){
@@ -46561,6 +46614,23 @@ function _fallbackCopy(text){
     a.addEventListener('ended', function(){ try{ var pt = allTracks.find(tr => tr.id === pendingPlayId); if(pt) commitPlay(pt); }catch(_e){} });
     a.addEventListener('play', onPlayEvt);
     a.addEventListener('pause', onPauseEvt);
+    // 85.8 - A SONG THAT ENDED WITH NOTHING AFTER IT IS SILENCE, NOT "PLAYING".
+    // `ended` fires no `pause` event, so nothing pushed a paused session and the card
+    // sat at the song's last second with a pause button. A moment after the end, if
+    // nothing has taken over (no next song, no film, no stream), the deck settles
+    // itself through scDeckRest(). A song that did start is not touched: its element
+    // is no longer `ended`, so this cannot stop a queue that is working.
+    a.addEventListener('ended', function(){
+      setTimeout(function(){
+        try{
+          if(crossfadeTriggered || crossfadeRAF) return;
+          if(window.__scVideoSoundOwn) return;
+          if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()) return;
+          var cur = activeAudio();
+          if(cur && cur.ended) scDeckRest('the song ended and nothing followed it');
+        }catch(_eEndedSettle){}
+      }, 1500);
+    });
     a.addEventListener('ended', function(){
       if(window.__pendingSWReload){
         window.__pendingSWReload = false;
