@@ -4754,6 +4754,13 @@ body.sc80-cloud #nowPlaying{
 #npControls #sc11Lyrics{ display:none; width:32px; height:32px; }
 body.sc80-cloud #npControls #sc11Lyrics{ display:flex; }
 
+/* 85.9 - AND SO IS THE MUSIC VIDEO'S. The cloud bar hides the row the MV chip sits on
+   (DJ MODE / LYRICS / MV), so the cloud bar gets the camera beside Lyrics, at the same
+   size and in the same place: one more id, one more handler, one viewer. */
+#npControls #sc11Video{ display:none; width:32px; height:32px; }
+body.sc80-cloud #npControls #sc11Video{ display:flex; }
+#npControls #sc11Video svg{ width:18px; height:18px; }
+
 /* 2. THE SEAM COMES OFF THE TILES. The svg is pointer-events:none, so putting it
    away costs neither of the two taps the split halves still take. */
 body.sc80-cloud #libraryBtn > svg,
@@ -5501,6 +5508,9 @@ html, body{ max-width:100%; overflow-x:hidden; }
     <span id="mixBadge" style="display:none; font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:1px; color:var(--gold); border:1px solid var(--gold); border-radius:10px; padding:2px 7px;">MIX</span>
     <button id="djModeBtn" title="DJ Mode" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:10px; padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; letter-spacing:1px; cursor:pointer;">DJ MODE</button>
     <button id="lyricsBtn" title="Lyrics · saved lyrics load first; Refetch searches online again" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:10px; padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; letter-spacing:1px; cursor:pointer;">LYRICS <span class="online-badge" style="font-size:7px;padding:1px 3px;">ONLINE</span></button>
+    <!-- 85.9 - THE FILM IS ON THE BAR, at the right-hand end of the DJ MODE / LYRICS row:
+         it was a glyph on the library's side rail, a page away from the song it plays for. -->
+    <button id="mvBtn" title="Music video · the film for the song that is on" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:10px; padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; letter-spacing:1px; cursor:pointer;"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false" style="display:block;fill:currentColor;"><path d="M4 6h10.5a1 1 0 0 1 1 1v2.6l4.5-2.8v10.4l-4.5-2.8V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/></svg>MV</button>
   </div>
   <div class="seek-row">
     <span id="curTime">0:00</span>
@@ -19987,7 +19997,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // app's own screen (library or albums); `src` is 'd' for what is on the device and
   // 's' for what plays from the source. Streaming is no longer a page apart: it is
   // the other side of the page that is already up.
-  var scShelf = { page: 'library', src: 'd', open: false, built: false, modeAt: '' };
+  // 85.9 - the page starts on Playlists, the rail's first glyph, so a fresh rail has a
+  // lit glyph before the mode-follow below has run (it never says 'library': that page
+  // has no glyph any more).
+  var scShelf = { page: 'playlists', src: 'd', open: false, built: false, modeAt: '' };
   // 85.3.11 - THE GLYPH IS THE PAGE THE LIBRARY IS SHOWING.
   // The rail's page started at the first glyph ('library') and only a glyph tap ever
   // moved it. The Boot view was applied to libraryMode alone, so a library set to open on
@@ -20147,15 +20160,21 @@ function startLyricsAutoScroll(keepPos, noReset) {
     ].join('');
     document.head.appendChild(st);
   }
-  // 80.6.32 - A GLYPH CAN BE PICKED UP AND PUT SOMEWHERE ELSE. The rail's three pages
-  // are the library's pages, and the order they sit in is the order the owner reads
-  // them in. Holding one for a moment lifts it, dragging it past a neighbour swaps
-  // the two, and the order is written down; a drag never opens the page it carried.
-  var SC_RAIL_PAGES = ['library', 'playlists', 'albums'];
+  // 80.6.32 - A GLYPH CAN BE PICKED UP AND PUT SOMEWHERE ELSE. The rail's pages are the
+  // library's pages, and the order they sit in is the order the owner reads them in.
+  // Holding one for a moment lifts it, dragging it past a neighbour swaps the two, and
+  // the order is written down; a drag never opens the page it carried.
+  // 85.9 - TWO PAGES, AND NEITHER OF THEM IS A LIST OF ONE THING. "remove the all songs
+  // only tab and make it all playlists and all songs": the Songs glyph opened All Songs
+  // and nothing else, one room away from the Playlists glyph, which is the same library
+  // with every playlist in a strip and the songs under it. So the narrow one is gone and
+  // Playlists is the whole library. 'library' is still a page the app can open on its own
+  // (the download landing and the dock's Library pill go there); it just has no glyph.
+  var SC_RAIL_PAGES = ['playlists', 'albums'];
   function scShelfOrder(){
-    // Whatever is stored is filtered against the three pages this build knows about,
-    // so a stale order from an older page - or a page that was renamed - cannot leave
-    // the rail empty or draw a glyph that opens nothing.
+    // Whatever is stored is filtered against the pages this build knows about, so a
+    // stale order from an older page - or a page that was renamed - cannot leave the
+    // rail empty or draw a glyph that opens nothing.
     try{
       var raw = JSON.parse(localStorage.getItem('sidecut_railOrder') || 'null');
       if(Array.isArray(raw)){
@@ -20245,29 +20264,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
     }, true);
   }
-  // 85.3.16 - THE SONG'S THREE DOTS, ON THE RAIL. Same sheet, same song as the row's kebab:
-  // the one that is playing. A song from the source has no library row to act on, and says
-  // so rather than opening an empty sheet.
-  function scShelfDots(){
-    var id = '';
-    try{
-      if(typeof queue !== 'undefined' && typeof queueIndex !== 'undefined' && queueIndex >= 0 && queueIndex < queue.length) id = String(queue[queueIndex] || '');
-    }catch(_eDotsQ){ id = ''; }
-    var has = false;
-    try{ has = !!id && typeof allTracks !== 'undefined' && allTracks.some(function(t){ return t && String(t.id) === id; }); }catch(_eDotsT){ has = false; }
-    if(!has){
-      try{ if(typeof window.toast === 'function') window.toast('Play a song from your library to use its actions'); }catch(_eDotsToast){}
-      return false;
-    }
-    try{ openSongActions(id); }catch(_eDotsOpen){ return false; }
-    return true;
-  }
+  // 85.3.16 - THE SONG'S THREE DOTS WERE ON THE RAIL, and 85.9 took them off it: "clean
+  // up the side tab bar remove the 3 dots from that too". scShelfDots() went with the
+  // glyph - it existed only to be that glyph's tap (one sheet, for the song that is on).
+  // The same sheet is still on the now bar's ... menu and on the song's own row, so the
+  // rail lost a third door to a menu that was already two fingers away, not the menu.
   function scShelfRender(){
-    // 80.6.31 - THE RAIL IS NOT A STREAMING FEATURE. The three page glyphs are the
-    // library's own pages - Songs, Playlists, Albums - and gating them on the source
-    // took the only shortcut to Playlists and Albums away from the version that has
-    // no source switch. The glyphs are built everywhere; the switch below them is
-    // the part that is still gated, inside the markup below.
+    // 80.6.31 - THE RAIL IS NOT A STREAMING FEATURE. The page glyphs are the library's
+    // own pages and gating them on the source took the only shortcut to Playlists and
+    // Albums away from the version that has no source switch. The glyphs are built
+    // everywhere; the switch below them is the part that is still gated, inside the
+    // markup below. (85.9: two glyphs, Playlists and Albums.)
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
     // 80.6.29 - THE RAIL CANNOT BE MOVED BY THE PAGE IT SITS ON. Every view that
@@ -20284,43 +20291,35 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // visibly every time one was chosen. The buttons are made here and never again;
     // scShelfMark() only moves the mark from one glyph to the next.
     if(rail.getAttribute('data-built') !== '1'){
-      // 80.6.28 - THREE PAGES, AND THE SOURCE SAYS WHOSE THEY ARE. Playlists had no
-      // page at all: the streaming lists were a row of chips under the shelf, so on
-      // the source there was no button that showed all of them. Every page now
-      // answers in the source that is on - the streaming songs, playlists and
-      // albums, or the downloaded ones - and no glyph ever moves the source.
+      // 80.6.28 - THE PAGES SAY WHOSE THEY ARE. Playlists had no page at all: the
+      // lists were a row of chips under the shelf, so there was no button that showed
+      // all of them. Every page answers in the source that is on, and no glyph ever
+      // moves the source.
       // 80.6.32 - THE ORDER IS THE OWNER'S. The three glyphs used to be baked in this
       // order with no way to change it; they are read from scShelfOrder() now, so a
       // page dragged to the top of the rail is at the top of it next launch too.
-      var _pageMeta = { library: ['Songs', 'list'], playlists: ['Playlists', 'plist'], albums: ['Albums', 'grid'] };
+      // 85.9 - ONE LIST OF EVERYTHING, NOT TWO VIEWS OF IT. The Songs glyph opened All
+      // Songs; the Playlists glyph opens every playlist in the strip with its songs in
+      // the list under it, All Songs among them. One glyph, all playlists and all songs.
+      var _pageMeta = { playlists: ['Playlists and songs', 'plist'], albums: ['Albums', 'grid'] };
       var pages = scShelfOrder().map(function(id){ return [id, _pageMeta[id][0], _pageMeta[id][1]]; });
       var h = pages.map(function(t){
         return '<button type="button" class="scshelf-tab" data-shelf="' + t[0] + '"' +
           ' aria-pressed="false" aria-label="' + escapeHtml(t[1]) + '"' +
           ' title="' + escapeHtml(t[1]) + '">' + scIcon(t[2], 17) + '</button>';
       }).join('');
-      // 80.6.31 - THE SWITCH NEEDS A SOURCE. The three glyphs above are the library's
+      // 80.6.31 - THE SWITCH NEEDS A SOURCE. The two glyphs above are the library's
       // pages and every version gets them; a switch that flips between the device and
       // a source would be a door into a room this build does not have, so it is built
       // only where there is a source to flip to.
-      // 85.0.0 - THE VIDEO TAB IS A GLYPH, NOT A PAGE. It sits under the three
-      // library pages and above the source switch, it never changes the source,
-      // and it is built only where a video can actually play: the Play build has
-      // no source and no video path, so it gets no fourth glyph at all.
-      // 85.3.16 - ONE HAIRLINE FOR THE TOOLS. The video glyph had a rule of its own and the
-      // source switch another, so a rail of five glyphs read as four groups. The rail is
-      // three: the pages, the tools that work on the song, and the source.
-      h += '<div class="scshelf-sep"></div>';
-      if(typeof SC_IS_PLAY === 'undefined' || !SC_IS_PLAY){
-        h += '<button type="button" class="scshelf-tab" data-video="1"' +
-          ' aria-pressed="false" aria-label="Music video" title="Music video">' +
-          scIcon('video', 17) + '</button>';
-      }
-      // 85.3.16 - THE THREE DOTS ARE ON THE RAIL TOO. The rail is where a page is changed
-      // from, and a song's actions were only on its row or on the now bar. This opens the
-      // very sheet openSongActions builds, for the song that is on - one menu, three doors.
-      h += '<button type="button" class="scshelf-tab scshelf-dots" data-dots="1"' +
-        ' aria-label="Song actions" title="Song actions">' + scIcon('dots', 17) + '</button>';
+      // 85.0.0 - THE VIDEO TAB WAS A GLYPH, NOT A PAGE; 85.9 moved it to the now bar as
+      // #mvBtn, so there is no video glyph left on the rail - and one hairline is all
+      // that is left to draw.
+      // 85.9 - THE TOOLS LEFT THE RAIL. "move the mv to the now bar where the lyrics is to
+      // the full right of that and clean up the side tab bar remove the 3 dots from that
+      // too". The music video is a chip on the now bar beside LYRICS now, and the song's
+      // ... menu was already on that bar and on its row - so the rail is two pages and,
+      // where there is a source to flip to, the switch. One hairline, no loose tools.
       if(SC_STREAM_OK){
         h += '<div class="scshelf-sep"></div>';
         h += '<button type="button" class="scshelf-tab scshelf-src" data-src="1"' +
@@ -20336,10 +20335,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // a drag has to be the first listener on the glyph, or the page opens anyway.
         if(b.getAttribute('data-shelf')) scRailDrag(b);
         b.addEventListener('click', function(){
-          // 85.0.0 - the video glyph opens the viewer for the song that is on;
-          // it is not a shelf page, so it does not touch scShelf.page or the source.
-          if(this.getAttribute('data-video') === '1'){ scVideoOpen(); return; }
-          if(this.getAttribute('data-dots') === '1'){ scShelfDots(); return; }
+          // 85.9 - one door beside the pages: the source switch. The music video moved to
+          // the now bar and the song's ... menu is on the bar, so neither is built here
+          // any more and their branches went with their glyphs.
           if(this.getAttribute('data-src') === '1'){ scShelfSetSrc(scShelf.src === 's' ? 'd' : 's'); return; }
           scShelfOpenTab(this.getAttribute('data-shelf'));
         });
@@ -20352,9 +20350,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
     Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
-      // 85.3.16 - THE DOTS ARE NOT A PAGE. They carry no mark of their own, and the class
-      // rewrite below would strip the glyph's class off them.
-      if(b.getAttribute('data-dots') === '1') return;
       if(b.getAttribute('data-src') === '1'){
         // 80.6.25 - NO GLYPH IS REPLACED. Both icons were built with the rail and
         // this only chooses which one is drawn, so the node under the thumb keeps
@@ -24244,10 +24239,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scShelfMark();
       return;
     }
-    // 80.6.28 - ON THE DEVICE THE THREE PAGES ARE THE LIBRARY THREE. Songs is All
-    // Songs, Playlists is the strip it has always been, Albums is Albums. The Songs
-    // glyph used to land on whatever playlist was last used, which is not what the
-    // word says, so the three glyphs answered with two pages between them.
+    // 80.6.28 - ON THE DEVICE THE PAGES ARE THE LIBRARY'S. Playlists is the strip it has
+    // always been (with All Songs in it), Albums is Albums. 85.9 took the third glyph
+    // and its page away, so scShelfApply still answers 'library' for the doors that are
+    // not glyphs - the download landing and the dock's Library pill.
     if(page === 'library'){
       try{ if(typeof activePlaylist !== 'undefined') activePlaylist = 'All Songs'; }catch(_eAllSongs){}
     }
@@ -24366,6 +24361,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(t) fetchLyrics(t);
   });
+
+  // 85.9 - THE FILM IS ON THE BAR, AT THE RIGHT-HAND END OF THIS ROW. It used to be a
+  // glyph on the library's side rail, a page away from the song it plays for. The camera
+  // chip is the last thing on the DJ MODE / LYRICS row now, and it opens the same viewer
+  // the rail glyph opened - one function, one tab. SC_IS_PLAY is the Play build, which
+  // has no video path, so it gets no chip (the rail built no glyph there either).
+  (function(){
+    var mv = document.getElementById('mvBtn');
+    if(!mv) return;
+    if(typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY){ mv.style.display = 'none'; return; }
+    mv.addEventListener('click', function(){
+      try{ if(typeof scVideoOpen === 'function') scVideoOpen(); }catch(_eMvOpen){}
+    });
+  })();
   
   $('lyricsClose').addEventListener('click', () => { 
     $('lyricsBackdrop').style.display = 'none'; 
@@ -25381,7 +25390,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '85.8';
+  const APP_VERSION = '85.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -26091,6 +26100,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  // 85.9 - THE FILM IS ON THE BAR, AND THE RAIL IS TWO PAGES.
+    { version: '85.9', date: 'November 27, 2026', title: 'The music video sits on the now bar beside Lyrics, and the side rail is two whole pages instead of three narrow ones', items: [
+      'The music video is on the now bar now, at the right-hand end of the DJ MODE and LYRICS row - beside the song it plays for, instead of a page away on the side rail. One tap opens the same viewer it always did.',
+      'The cloud layout keeps its controls on one line and hides that row, so it gets the little camera beside the Lyrics icon instead, at the same size and in the same place.',
+      'The side rail is cleaner. The song\u2019s ... menu is gone from it: the same sheet is on the now bar and on the song\u2019s own row, so a third door over the artwork was one door too many.',
+      'The rail\u2019s first glyph is no longer all songs and nothing else. It is Playlists, and it opens every playlist in the strip with the songs listed under it - all of your playlists and all of your songs in one place - with Albums beside it.',
+      'Two glyphs, one hairline and the same drag order: a glyph you move is still where you left it next launch.'
+    ] },
   // 85.8 - A STOPPED DECK IS SILENT, AND THE CARD STOPS SAYING IT IS PLAYING.
     { version: '85.8', date: 'November 27, 2026', title: 'A player with nothing left to play stops and says so, instead of a card in the shade claiming a song is still going', items: [
       'A song that finishes with nothing after it is now silence, and the phone is told so. The last second of a song used to leave the now-playing card frozen at its end with a pause button - SideCut claiming it was still playing - because a song that reaches its end does not send the pause that normally updates the card.',
@@ -73913,7 +73930,9 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
 <script>
 /* 80.2 - LYRICS, BACK IN THE BAR. The cloud bar hides the second np row, and the
    LYRICS pill lived in it. A compact icon button goes into #npControls and clicks
-   the same #lyricsBtn, so there is one handler and one lyrics view. */
+   the same #lyricsBtn, so there is one handler and one lyrics view.
+   85.9 - THE MUSIC VIDEO GOES WITH IT, for the same reason: the MV chip is on that row
+   now, so the cloud bar gets the camera here and clicks #mvBtn. */
 (function(){
   function sc11AddLyrics(){
     try{
@@ -73934,10 +73953,32 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
       menu.parentNode.insertBefore(b, menu);
     }catch(e){}
   }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sc11AddLyrics);
-  else sc11AddLyrics();
-  window.addEventListener('load', sc11AddLyrics);
-  setTimeout(sc11AddLyrics, 1200);
+  function sc11AddVideo(){
+    try{
+      var controls = document.getElementById('npControls');
+      var menu = document.getElementById('npMenuBtn');
+      if(!controls || !menu || document.getElementById('sc11Video')) return;
+      if(typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY) return;
+      var b = document.createElement('button');
+      b.id = 'sc11Video';
+      b.type = 'button';
+      b.title = 'Music video';
+      b.setAttribute('aria-label', 'Music video');
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h10.5a1 1 0 0 1 1 1v2.6l4.5-2.8v10.4l-4.5-2.8V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/></svg>';
+      b.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var chip = document.getElementById('mvBtn');
+        if(chip) chip.click();
+        else if(typeof scVideoOpen === 'function') scVideoOpen();
+      });
+      menu.parentNode.insertBefore(b, menu);
+    }catch(e){}
+  }
+  function sc11AddBarIcons(){ sc11AddLyrics(); sc11AddVideo(); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sc11AddBarIcons);
+  else sc11AddBarIcons();
+  window.addEventListener('load', sc11AddBarIcons);
+  setTimeout(sc11AddBarIcons, 1200);
 })();
 </script>
 <script>

@@ -72,7 +72,7 @@ const UNIT = [
   grab('scVideoChooseFresh'), grab('scVideoPick'), grab('scVideoQualityChoose'),
   grab('scVideoFxPref'), grab('scVideoFxCanvas'), grab('scVideoFxApply'),
   grab('scVideoFxPaintOnce'), grab('scVideoFxToggle'),
-  grab('scVideoForTrack'), grab('scShelfDots')
+  grab('scVideoForTrack')
 ].join('\n');
 
 // The shipped functions, a fake stage, a fake preference store and recorders for everything
@@ -134,7 +134,7 @@ function harness(opts) {
   vm.runInContext(UNIT + '\n;globalThis.__u = {' +
     'scVideoDead, scVideoLive, scVideoDefault, scVideoRungFor, scVideoChooseFresh, scVideoPick, ' +
     'scVideoQualityChoose, scVideoFxPref, scVideoFxCanvas, scVideoFxApply, scVideoFxPaintOnce, ' +
-    'scVideoFxToggle, scVideoForTrack, scShelfDots};',
+    'scVideoFxToggle, scVideoForTrack};',
     sandbox, { filename: 'video-85316.js' });
   return { U: sandbox.__u, s: sandbox, calls: calls, state: state, dom: dom };
 }
@@ -335,24 +335,17 @@ async function main() {
   }
 
   // ===========================================================================
-  console.log('\n4. The rail has the three dots');
-  {
-    const h = harness({ queue: ['t1'], queueIndex: 0, tracks: [{ id: 't1' }] });
-    ok('the dots open the actions of the song that is on',
-      h.U.scShelfDots() === true && h.calls.indexOf('actions:t1') >= 0);
-    const h2 = harness({ queue: ['scstream:9'], queueIndex: 0, tracks: [{ id: 't1' }] });
-    ok('a song with no library row is told so, not given an empty sheet',
-      h2.U.scShelfDots() === false && h2.calls.indexOf('toast') >= 0 && !h2.calls.some(function (c) { return c.indexOf('actions:') === 0; }));
-    const h3 = harness({ queue: [], queueIndex: -1, tracks: [{ id: 't1' }] });
-    ok('nothing playing is the same answer', h3.U.scShelfDots() === false && h3.calls.indexOf('toast') >= 0);
-  }
+  // 85.9 - THE THREE DOTS LEFT THE RAIL. The owner asked for them off the side tab bar,
+  // so scShelfDots() and its glyph are gone and this suite no longer drives them; what it
+  // drove - one sheet, for the song that is on - is where it always was (the now bar's ...
+  // menu and the row's kebab). The rail the dots left is measured here, and the two doors
+  // are measured in dev/check-859.cjs. No earlier behaviour was weakened.
+  console.log('\n4. The rail the dots left behind');
   {
     const render = grab('scShelfRender');
-    ok('the rail builds the three dots', /data-dots="1"/.test(render) && /scIcon\('dots'/.test(page));
-    ok('a tap on it is the song actions', /data-dots'\) === '1'\)\{ scShelfDots\(\); return;/.test(render));
-    ok('the glyph is not a page and keeps its own class',
-      /data-dots'\) === '1'\) return;/.test(grab('scShelfMark')));
-    ok('the rail is three groups, not four', (render.match(/scshelf-sep/g) || []).length === 2,
+    ok('the rail no longer builds the three dots', !/data-dots=/.test(page) && !/scshelf-dots/.test(page));
+    ok('and no longer builds the music video glyph beside them', !/data-video=/.test(page));
+    ok('two pages and one switch, so one hairline', (render.match(/scshelf-sep/g) || []).length === 1,
       (render.match(/scshelf-sep/g) || []).length);
     ok('every glyph is one size', /\.scshelf-tab\{pointer-events:auto;width:34px;height:34px/.test(page));
     ok('the rail is still the drag-reorderable one', /function scRailDrag/.test(page) && /sidecut_railOrder/.test(page));

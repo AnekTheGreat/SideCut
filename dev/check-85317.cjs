@@ -128,11 +128,12 @@ console.log('\n6. Nothing the rail could already do was taken away');
     css.includes('@media (prefers-reduced-motion: reduce){#scShelfRail .scshelf-tab{transition:none}}'));
   ok('the stylesheet is written once', /if\(document\.getElementById\('scShelfCss'\)\) return;/.test(css) &&
     /st\.id = 'scShelfCss';/.test(css));
-  ok('the rail still builds two groups and the three dots',
-    (render.match(/scshelf-sep/g) || []).length === 2 && /data-dots="1"/.test(render));
-  ok('the dots still open the song actions and no page',
-    /data-dots'\) === '1'\)\{ scShelfDots\(\); return;/.test(render) &&
-    /data-dots'\) === '1'\) return;/.test(mark));
+  // 85.9 - THE THREE DOTS LEFT THE RAIL, and the music video glyph with them, so the two
+  // assertions that pinned them to it are gone: where they went is dev/check-859.cjs's
+  // job. The rail's own paint, drag and mark are what this suite is about, and they are
+  // untouched - it still builds its pages and the switch under them.
+  ok('the rail still builds its pages and the switch under them',
+    /data-src="1"/.test(render) && /data-shelf=/.test(render));
   ok('the mark still writes classes and never replaces a node',
     !/innerHTML/.test(mark) && /b\.className = markcls;/.test(mark));
   ok('the switch keeps its own class when it is marked',

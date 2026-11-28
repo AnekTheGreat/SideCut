@@ -18,6 +18,85 @@ shipped release's number would make two builds claim one version `--` but everyt
 follows the rule above, and any unpublished work is rolled into the next legal number instead of
 getting a made-up label.
 
+## 85.9 (November 27, 2026): the film is a chip on the now bar, and the side rail is two whole pages
+
+**The owner's report**, over a screenshot of the library with the rail over it: "fix this up and
+move the mv to the now bar where the lyrics is to the full right of that and clean up the side tab
+bar remove the 3 dots from that tooremove the all songs only tab and make it all playlists and all
+songs clean this up". Three things, one rail.
+
+**THE MUSIC VIDEO WAS ON THE RAIL, A SCREEN AWAY FROM ITS SONG.** 85.0.0 put the video glyph under
+the library pages because the film had no door of its own; the song it plays for lives on the now
+bar, so the door was one page away from the thing it opens. It is a chip on the DJ MODE / LYRICS
+row now, pushed to the right-hand end with `margin-left:auto` (`#mvBtn`, the same mono 9.5px chip as
+its two neighbours, wearing the camera path), and it calls the same `scVideoOpen()`. The drain: the
+rail's `data-video` glyph and its click branch are gone.
+
+**AND THE CLOUD BAR HAD TO GET IT OR LOSE IT.** `body.sc80-cloud #nowPlaying .np-row + .np-row{
+display:none }` hides the row the chip lives on, which is exactly why 80.2 injected `#sc11Lyrics`
+into `#npControls`. The same script now injects `#sc11Video` beside it (hidden outside the cloud
+layout, `display:flex` in it) and its click is `#mvBtn.click()`, falling back to `scVideoOpen()` -
+one viewer, one handler, no second tab.
+
+**THE THREE DOTS LEFT WITH IT.** `scShelfDots()` went with its glyph: it existed only to be that
+glyph's tap, and the sheet it opened is still on the now bar's `...` menu and on the song's own row
+(`openSongActions`), so no door was lost - only a third door to a menu two fingers away.
+
+**AND THE RAIL IS TWO PAGES, NOT THREE.** "remove the all songs only tab and make it all playlists
+and all songs": the Songs glyph opened All Songs and nothing else, one room away from Playlists,
+which is the same library with every playlist in a strip and the songs under it. `SC_RAIL_PAGES` is
+`['playlists', 'albums']`, the glyph is labelled **Playlists and songs**, and the rail is one
+hairline (the pages, then the source switch where there is a source). `'library'` is still a page
+the app opens on its own - the download landing and the dock's Library pill both go there - it just
+has no glyph; `scShelf.page` starts at `'playlists'` so a fresh rail has a lit glyph before
+`scShelfModeFollow()` runs, since that function never answers `'library'` any more.
+
+**The drag order is untouched.** `scShelfOrder()` filters a stored `sidecut_railOrder` against the
+pages this build has, then appends anything missing, so an order written on 85.8
+(`['library','playlists','albums']`) settles to the two pages in the owner's own order instead of
+emptying the rail or drawing a glyph that opens nothing.
+
+### What was checked, and what was not
+
+Checked: `node dev/check-859.cjs` passes **54 assertions, 0 failed**. The chip is driven where it
+sits: it is in the DJ MODE / LYRICS row, after LYRICS, carries `margin-left:auto`, wears the camera
+and says MV, its handler calls `scVideoOpen` and nothing else, the Play build hides it, and the
+cloud icon clicks `#mvBtn` with the viewer as its fallback and is hidden outside the cloud layout.
+`SC_RAIL_PAGES` is the two pages, the Songs page has no glyph, the rail builds no `data-video` and
+no `data-dots` (and `scShelfDots` is gone), one hairline, the switch is still gated on `SC_STREAM_OK`,
+a tap is a page or the switch and nothing else, `scShelfMark` has no dots branch to skip, and
+`scShelfOrder` is **run** in a vm against four stores: nothing stored is the two pages, a stored
+order holding `library` keeps its own order (`['library','albums','playlists']` ->
+`['albums','playlists']`), an order missing a page gets it back rather than an empty rail, and a
+corrupt store is the two pages. Every door the removed three had is asserted still standing: the
+bar's `...` menu, `openSongActions`, `scShelfOpenTab('library')` from the dock pill, the download
+landing on All Songs, and the film on the song's own sheet. Release facts: 10 inline scripts parse,
+the page and the shell cache are 85.9, one `85.9` entry sits above 85.8 with no word the Play
+channel filters, and the version is two parts with no third. Every earlier gate still passes: 85.8
+**31**, 85.7 **41**, 85.6 **49**, 85.5 **46**, 85.3.22 **25**, 85.3.21 **43**, 85.3.20 **61**,
+85.3.19 **49**, 85.3.18 **66**, 85.3.17 **44**, 85.3.16 **56**, 85.3.15 **63**, 85.3.14 **38**,
+85.3.13 **37**, 85.3.12 **32**, 85.3.11 **22**, 85.3.10 **32**, 85.3.9 **46**, 85.3.8 **57**,
+85.3.7 **66**, 85.3.6 **75**, 85.3.4 **243**, 85.3.3 **235**, 85.3.2 **213** and the
+85.3.0/85.3.1 **204** sets. **Two gates had assertions rewritten for this release's contract, each
+with a note in the file**: 85.3.16's three `scShelfDots` drives and its rail-group count (the dots
+left the rail; the rest of its suite is unchanged), and 85.3.17's two dots assertions (its rail
+paint, drag and mark are untouched). Nothing was weakened: what those assertions pinned is now
+pinned where the dots went, in 859. Both OTA channels rebuilt to a fixed point
+(`1357824 -> 1359086 -> 1358948 -> 1358860 -> 1358860`) and verify with `--check`.
+
+Bundles on this release, both channels rebuilt to their fixed point: `ota/updates.json`
+**1358860 bytes**, `ota-play/updates.json` **1358876 bytes**. Page-only: no native change, so the
+APK is not rebuilt.
+
+Not checked, and this is the honest part: **no phone, and nothing was tapped.** Nothing was played
+or opened from this sandbox, so what is proven is which glyphs the rail builds, what the chip's
+handler calls and which doors are left - not how the chip sits against LYRICS on a particular
+screen, nor that the owner's own library scrolls the way it did. The rail's own glass, its drag and
+its mark are untouched code, but the rung of the rail is shorter now (two glyphs and the switch), so
+the `--scshelf-solid` setting in Tools has less to tint than it used to. The `dots` and `list` paths
+are still in `scIcon()`; nothing draws them, and they are left there rather than shaving an icon map
+for a release about where the doors are.
+
 ## 85.8 (November 27, 2026): a deck with nothing to play stops and says so, and a finished song is not an interrupted one
 
 **The owner's report**: "it keeps ghost playing audio from SideCut even tho I don't have anything
